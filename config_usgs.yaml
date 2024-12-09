@@ -1,0 +1,10 @@
+usgs:
+    priority:
+    api:
+        extract:
+        outputs_prefix:
+        dl_url_params:
+        product_location_scheme:
+        credentials:
+            username: "Jesus.Guerrero"
+            password: "D0lot$ofwork"
