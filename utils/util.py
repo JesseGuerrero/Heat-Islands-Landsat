@@ -245,7 +245,7 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, cloudMax):
     }
     cloudCoverFilter = {'min': 0, 'max': cloudMax}
     if datasetName == 'landsat_ot_c2_l2' or datasetName == 'ccdc_v1_3':
-        temporal = {'start': f'{year}-01-01', 'end': f'{year}-02-31'}
+        temporal = {'start': f'{year}-01-01', 'end': f'{year}-12-31'}
     else:
         temporal = {}
     return {
