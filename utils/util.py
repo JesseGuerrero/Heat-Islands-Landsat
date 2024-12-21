@@ -66,6 +66,8 @@ def clipUnprocessedRasters(tifs, boundPolygon):
 
 	goodCoordinates = []
 	for tif in tifs:
+		if 'Clipped_' in tif:
+			continue
 		tif_path = os.path.join(unprocessed_dir, tif)
 
 		# Open the raster using rioxarray
