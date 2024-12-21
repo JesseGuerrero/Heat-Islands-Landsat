@@ -56,40 +56,52 @@ import os
 import rioxarray
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
+
+
 def clipUnprocessedRasters(tifs, boundPolygon):
-    goodCoordinates = []
-    for tif in tifs:
-        tif_path = unprocessed_dir + '/' + tif
+	# Reproject the bounding polygon to EPSG:4326
+	if boundPolygon.crs != "EPSG:4326":
+		# print("Reprojecting bounding polygon to EPSG:4326...")
+		boundPolygon = boundPolygon.to_crs("EPSG:4326")
 
-        # Open the raster using rioxarray
-        raster = rioxarray.open_rasterio(tif_path)
+	goodCoordinates = []
+	for tif in tifs:
+		tif_path = os.path.join(unprocessed_dir, tif)
 
-        # Extract colormap from the original raster
-        colormap = None
-        with rasterio.open(tif_path) as src:
-            if src.colorinterp[0] == rasterio.enums.ColorInterp.palette:
-                colormap = src.colormap(1)  # Assuming band 1 has the colormap
+		# Open the raster using rioxarray
+		raster = rioxarray.open_rasterio(tif_path)
+		# print(f"Opened raster: {tif}, Original CRS: {raster.rio.crs}")
 
-        # Clip the raster using the bounding polygon
-        clipped = raster.rio.clip(boundPolygon.geometry, boundPolygon.crs, drop=True)
+		# Reproject the raster to EPSG:4326
+		raster_reprojected = raster.rio.reproject("EPSG:4326")
+		# print(f"Raster reprojected to EPSG:4326 for clipping.")
 
-        # Reproject to EPSG:4326
-        reprojected = clipped.rio.reproject("EPSG:4326")
+		# Extract colormap from the original raster
+		colormap = None
+		with rasterio.open(tif_path) as src:
+			if src.colorinterp[0] == rasterio.enums.ColorInterp.palette:
+				colormap = src.colormap(1)  # Assuming band 1 has the colormap
 
-        # Save the output raster, preserving metadata
-        clipped_file_path = unprocessed_dir + f"/Clipped_{tif}"
-        reprojected.rio.to_raster(clipped_file_path)
+		# Clip the raster using the bounding polygon
+		clipped = raster_reprojected.rio.clip(boundPolygon.geometry, boundPolygon.crs, drop=True)
+		# print(f"Clipping completed for raster: {tif}")
 
-        # Reapply colormap to the saved raster if it exists
-        if colormap:
-            with rasterio.open(clipped_file_path, "r+") as dest:
-                dest.write_colormap(1, colormap)
+		# Save the output raster, preserving metadata
+		clipped_file_path = os.path.join(unprocessed_dir, f"Clipped_{tif}")
+		clipped.rio.to_raster(clipped_file_path)
+		# print(f"Clipped raster saved at: {clipped_file_path}")
 
-        # Add the coordinate info from filename to the list
-        goodCoordinates.append(tif.split('_')[2])
-        print(f"Clipped, reprojected, and color-preserved TIF saved as {clipped_file_path}")
+		# Reapply colormap to the saved raster if it exists
+		if colormap:
+			with rasterio.open(clipped_file_path, "r+") as dest:
+				dest.write_colormap(1, colormap)
+			# print(f"Colormap reapplied to raster: {clipped_file_path}")
 
-    return goodCoordinates
+		# Add the coordinate info from filename to the list
+		goodCoordinates.append(tif.split('_')[2])
+		print(f"Clipped, reprojected, and color-preserved TIF saved as {clipped_file_path}")
+
+	return goodCoordinates
 
 
 from datetime import datetime
