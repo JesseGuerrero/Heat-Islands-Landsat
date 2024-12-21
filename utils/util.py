@@ -1,3 +1,5 @@
+import os
+os.environ['PROJ_LIB'] = r'C:\OSGeo4W\share\proj'
 import json
 import requests
 from getpass import getpass
@@ -6,10 +8,10 @@ import time
 import re
 import threading
 import datetime
-import os
 import pandas as pd
 from geojson import Polygon, Feature, FeatureCollection, dump
 import geopandas as gpd
+import rioxarray
 
 maxthreads = 5 # Threads count for downloads
 sema = threading.Semaphore(value=maxthreads)
@@ -50,77 +52,70 @@ def getLongitudeLatitudeOfTif(filePath) -> list:
 	longitude = (min_lon + max_lon) / 2
 	return [longitude, latitude]
 
-from rasterio.mask import mask
-from rasterio.warp import calculate_default_transform, reproject, Resampling
 import os
+import rioxarray
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
 def clipUnprocessedRasters(tifs, boundPolygon):
-	for tif in tifs:
-		tif_path = os.path.join(unprocessed_dir, tif)
-		with rasterio.open(tif_path) as clip_src:
+    goodCoordinates = []
+    for tif in tifs:
+        tif_path = unprocessed_dir + '/' + tif
 
-			# Mask the original file
-			out_image, out_transform = mask(clip_src, [boundPolygon.geom], crop=True)
+        # Open the raster using rioxarray
+        raster = rioxarray.open_rasterio(tif_path)
 
-			# Update metadata after masking
-			masked_meta = clip_src.meta.copy()
-			masked_meta.update({
-				"driver": "GTiff",
-				"height": out_image.shape[1],
-				"width": out_image.shape[2],
-				"transform": out_transform
-			})
+        # Extract colormap from the original raster
+        colormap = None
+        with rasterio.open(tif_path) as src:
+            if src.colorinterp[0] == rasterio.enums.ColorInterp.palette:
+                colormap = src.colormap(1)  # Assuming band 1 has the colormap
 
-			# Calculate bounds from the masked raster
-			left, bottom = out_transform * (0, out_image.shape[1])
-			right, top = out_transform * (out_image.shape[2], 0)
+        # Clip the raster using the bounding polygon
+        clipped = raster.rio.clip(boundPolygon.geometry, boundPolygon.crs, drop=True)
 
-			# Reproject the masked raster to EPSG:4326
-			dst_crs = 'EPSG:4326'
-			transform, width, height = calculate_default_transform(
-				clip_src.crs, dst_crs, out_image.shape[2], out_image.shape[1], left, bottom, right, top
-			)
+        # Reproject to EPSG:4326
+        reprojected = clipped.rio.reproject("EPSG:4326")
 
-			reprojected_meta = masked_meta.copy()
-			reprojected_meta.update({
-				"crs": dst_crs,
-				"transform": transform,
-				"width": width,
-				"height": height
-			})
+        # Save the output raster, preserving metadata
+        clipped_file_path = unprocessed_dir + f"/Clipped_{tif}"
+        reprojected.rio.to_raster(clipped_file_path)
 
-			with rasterio.MemoryFile() as memfile:
-				with memfile.open(**reprojected_meta) as reprojected:
-					for i in range(1, clip_src.count + 1):
-						reproject(
-							source=out_image[i - 1],  # Bands are 0-indexed in the array
-							destination=rasterio.band(reprojected, i),
-							src_transform=out_transform,
-							src_crs=clip_src.crs,
-							dst_transform=transform,
-							dst_crs=dst_crs,
-							resampling=Resampling.nearest
-						)
+        # Reapply colormap to the saved raster if it exists
+        if colormap:
+            with rasterio.open(clipped_file_path, "r+") as dest:
+                dest.write_colormap(1, colormap)
 
-					# Save the final reprojected file
-					clipped_file_path = os.path.join(unprocessed_dir, f"Clipped_{tif}")
-					with rasterio.open(clipped_file_path, "w", **reprojected_meta) as dest:
-						dest.write(reprojected.read())
-						print(f"Masked and reprojected TIF saved as {clipped_file_path}")
+        # Add the coordinate info from filename to the list
+        goodCoordinates.append(tif.split('_')[2])
+        print(f"Clipped, reprojected, and color-preserved TIF saved as {clipped_file_path}")
+
+    return goodCoordinates
+
 
 from datetime import datetime
 def getMetaFromLandsatTIRs(fileName) -> tuple:
-	date = datetime.strptime(fileName['entityId'].split('_')[4], "%Y%m%d").strftime("%Y-%m-%d")
-	band = fileName['entityId'].split('_')[-2]
-	return date, band
+	date = datetime.strptime(fileName.split('_')[(4 if 'Clipped_' in fileName else 3)], "%Y%m%d").strftime("%Y-%m-%d")
+	band = fileName.split('_')[-1].replace('.TIF', '').replace('.txt', '')
+	coordinates = fileName.split('_')[(3 if 'Clipped_' in fileName else 2)]
+	return date, band, coordinates
 
 import shutil
-def moveToRaw(file: str, typeFolder: str, date, city, band):
+def moveToRaw(file: str, typeFolder: str, date, city):
 	filePath = os.path.join(unprocessed_dir, file)
 	dateFolder = datetime.strptime(date, "%Y-%m-%d").strftime("%m-%Y")
 	target_folder = os.path.join(raw_dir,  typeFolder, dateFolder, city)
 	os.makedirs(target_folder, exist_ok=True)
 	target_file_path = os.path.join(target_folder, file)
 	shutil.copy2(filePath, target_file_path)
+
+def clear_folder(folder_path):
+    for file in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file)
+        if os.path.isfile(file_path) or os.path.islink(file_path):
+            os.remove(file_path)
+            print(f"Deleted file: {file_path}")
+        elif os.path.isdir(file_path):
+            os.rmdir(file_path)
 
 def sendRequest(url, data, apiKey=None, exitIfNoResponse=True):
 	"""
@@ -186,8 +181,16 @@ def sendRequest(url, data, apiKey=None, exitIfNoResponse=True):
 
 	return output['data']
 
+import tarfile
+def extract_specific_files(tar_path, extract_to, include_keywords=None):
+    with tarfile.open(tar_path, "r") as tar:
+        for member in tar.getmembers():
+            if include_keywords is None or any(keyword in member.name for keyword in include_keywords):
+                tar.extract(member, extract_to)
+                print(f"Extracted: {member.name}")
+
 def runDownload(threads, url):
-    thread = threading.Thread(target=downloadFile, args=(url))
+    thread = threading.Thread(target=downloadFile, args=(url,))
     threads.append(thread)
     thread.start()
 
@@ -228,5 +231,30 @@ def prompt_ERS_login():
     else:
         print("\nLogin was unsuccessful, please try again or create an account at: https://ers.cr.usgs.gov/register.")
 
+def createSceneSearchPayload(datasetName, aoi_geodf, year, cloudMax):
+    spatialFilter = {
+        'filterType': 'mbr',
+        'lowerLeft': {
+            'latitude': aoi_geodf.geometry.bounds.miny[0],
+            'longitude': aoi_geodf.geometry.bounds.minx[0]
+        },
+        'upperRight': {
+            'latitude': aoi_geodf.geometry.bounds.maxy[0],
+            'longitude': aoi_geodf.geometry.bounds.maxx[0]
+        }
+    }
+    cloudCoverFilter = {'min': 0, 'max': cloudMax}
+    if datasetName == 'landsat_ot_c2_l2' or datasetName == 'ccdc_v1_3':
+        temporal = {'start': f'{year}-01-01', 'end': f'{year}-02-31'}
+    else:
+        temporal = {}
+    return {
+        'datasetName': datasetName,
+        'sceneFilter': {
+            'spatialFilter': spatialFilter,
+            'acquisitionFilter': temporal,
+            'cloudCoverFilter': cloudCoverFilter
+        }
+    }
 
 apiKey = prompt_ERS_login()
