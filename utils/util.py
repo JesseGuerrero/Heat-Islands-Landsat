@@ -207,19 +207,30 @@ def runDownload(threads, url):
     thread.start()
 
 def downloadFile(url):
-	sema.acquire()
-	try:
-		response = requests.get(url, stream=True)
-		disposition = response.headers['content-disposition']
-		filename = re.findall("filename=(.+)", disposition)[0].strip("\"")
-		print(f"    Downloading: {filename}...")
-
-		open(os.path.join(unprocessed_dir, filename), 'wb').write(response.content)
-		sema.release()
-	except Exception as e:
-		print(f"\nFailed to download from {url}. Will try to re-download.")
-		sema.release()
-		runDownload(threads, url)
+    """Download a file and handle HTTP 429 (rate limitation)."""
+    sema.acquire()
+    try:
+        while True:
+            response = requests.get(url, stream=True)
+            if response.status_code == 429:
+                print("HTTP 429: Rate limit reached during download. Waiting 16 minutes before retrying...")
+                time.sleep(16 * 60)  # Wait for 16 minutes
+                continue
+            elif response.status_code == 200:
+                disposition = response.headers.get('content-disposition', '')
+                filename = re.findall("filename=(.+)", disposition)
+                filename = filename[0].strip("\"") if filename else "unknown_file"
+                print(f"Downloading: {filename}...")
+                with open(os.path.join(unprocessed_dir, filename), 'wb') as file:
+                    file.write(response.content)
+                break
+            else:
+                print(f"Failed to download from {url}. HTTP Status: {response.status_code}. Retrying...")
+                time.sleep(60)  # Retry after 1 minute
+    except Exception as e:
+        print(f"Failed to download from {url} due to error: {e}")
+    finally:
+        sema.release()
 
 def prompt_ERS_login():
     print("Logging in...\n")
