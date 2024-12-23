@@ -22,8 +22,8 @@ unprocessed_dir = './Unprocessed'
 raw_dir = './RawClippedRasters'
 data_dir = './Data'
 dirs = [unprocessed_dir, data_dir, raw_dir,
-		data_dir + "/LST", data_dir + "/NDVI", data_dir + "/NDWI", data_dir + "/Land_Cover", data_dir + "/Albedo", data_dir + "/DEM",
-		raw_dir + "/LST", raw_dir + "/NDVI", raw_dir + "/NDWI", raw_dir + "/Land_Cover", raw_dir + "/Albedo", raw_dir + "/DEM"]
+		data_dir + "/LST", data_dir + "/NDVI", data_dir + "/NDWI", data_dir + "/Land_Cover", data_dir + "/Albedo", data_dir + "/DEM", data_dir + "/labelLST",
+		raw_dir + "/LST", raw_dir + "/NDVI", raw_dir + "/NDWI", raw_dir + "/Land_Cover", raw_dir + "/Albedo", raw_dir + "/DEM", raw_dir + "/labelLST"]
 for d in dirs:
 	if not os.path.exists(d):
 		try:
@@ -33,7 +33,13 @@ for d in dirs:
 			print(f"Error creating directory '{d}': {e}")
 	else:
 		print(f"Directory '{d}' already exists.")
-
+if not os.path.exists('progress.txt'):
+	with open('progress.txt', "w") as file:
+		pass
+if not os.path.exists('credentials.txt'):
+	print('In credentials place...\n---\nUsername\nToken\n---')
+	with open('credentials.txt', "w") as file:
+		pass
 import rasterio
 from pyproj import Transformer
 def getLongitudeLatitudeOfTif(filePath) -> list:
@@ -101,6 +107,8 @@ def clipUnprocessedRasters(tifs, boundPolygon):
 
 		# Add the coordinate info from filename to the list
 		goodCoordinates.append(tif.split('_')[2])
+		raster.close()
+		raster_reprojected.close()
 		print(f"Clipped, reprojected, and color-preserved TIF saved as {clipped_file_path}")
 
 	return goodCoordinates
@@ -269,7 +277,9 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, cloudMax):
         }
     }
     cloudCoverFilter = {'min': 0, 'max': cloudMax}
-    if datasetName == 'landsat_ot_c2_l2' or datasetName == 'ccdc_v1_3':
+    if datasetName == 'landsat_ot_c2_l2':
+        temporal = {'start': f'{year}-01-01', 'end': f'{year}-2-10'}
+    elif datasetName == 'ccdc_v1_3':
         temporal = {'start': f'{year}-01-01', 'end': f'{year}-12-31'}
     else:
         temporal = {}
