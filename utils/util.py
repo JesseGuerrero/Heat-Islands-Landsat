@@ -150,7 +150,6 @@ def sendRequest(url, data, apiKey=None, exitIfNoResponse=True):
 	Returns:
 	dict: Parsed JSON response
 	"""
-
 	json_data = json.dumps(data)
 
 	if apiKey == None:
@@ -200,7 +199,6 @@ def sendRequest(url, data, apiKey=None, exitIfNoResponse=True):
 		else:
 			return False
 	response.close()
-
 	return output['data']
 
 import tarfile
@@ -236,7 +234,7 @@ def downloadFile(url):
                 break
             else:
                 print(f"Failed to download from {url}. HTTP Status: {response.status_code}. Retrying...")
-                time.sleep(60)  # Retry after 1 minute
+                time.sleep(10)  # Retry after 10 seconds
     except Exception as e:
         print(f"Failed to download from {url} due to error: {e}")
     finally:
@@ -264,7 +262,10 @@ def prompt_ERS_login():
     else:
         print("\nLogin was unsuccessful, please try again or create an account at: https://ers.cr.usgs.gov/register.")
 
-def createSceneSearchPayload(datasetName, aoi_geodf, year, cloudMax):
+def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax):
+    month = str(month)
+    if len(month) == 1:
+        month = "0" + month
     spatialFilter = {
         'filterType': 'mbr',
         'lowerLeft': {
@@ -278,8 +279,8 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, cloudMax):
     }
     cloudCoverFilter = {'min': 0, 'max': cloudMax}
     if datasetName == 'landsat_ot_c2_l2':
-        temporal = {'start': f'{year}-01-01', 'end': f'{year}-12-31'}
-    elif datasetName == 'ccdc_v1_3':
+        temporal = {'start': f'{year}-{month}-01', 'end': f'{year}-{month}-31'}
+    elif datasetName == 'ccdc_v1_3' or datasetName == 'srtm_v3':
         temporal = {'start': f'{year}-01-01', 'end': f'{year}-12-31'}
     else:
         temporal = {}
