@@ -1,5 +1,5 @@
 import os
-os.environ['PROJ_LIB'] = r'C:\OSGeo4W\share\proj'
+# os.environ['PROJ_LIB'] = r'C:\OSGeo4W\share\proj'
 import json
 import requests
 from getpass import getpass
@@ -63,6 +63,25 @@ import rioxarray
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
 
+import smtplib
+from email.mime.text import MIMEText
+
+def notifySelf(body):
+	try:
+		subject = "Jupyter Notebook Cell Output"
+		to_email = "19152478204.19152478204.ZXZzbrC-TB@txt.voice.google.com"
+		from_email = "jesseguerrero1991@gmail.com"
+		password = "yhts ilcq ymyp nfjv"  # Use an app password for Gmail or similar
+		msg = MIMEText(body)
+		msg["Subject"] = subject
+		msg["From"] = from_email
+		msg["To"] = to_email
+		with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+			server.login(from_email, password)
+			server.sendmail(from_email, to_email, msg.as_string())
+	except Exception as e:
+		print("unable to send text...")
+		pass
 
 def clipUnprocessedRasters(tifs, boundPolygon):
 	# Reproject the bounding polygon to EPSG:4326
@@ -117,15 +136,15 @@ def clipUnprocessedRasters(tifs, boundPolygon):
 from datetime import datetime
 def getMetaFromLandsatTIRs(fileName) -> tuple:
 	date = datetime.strptime(fileName.split('_')[(4 if 'Clipped_' in fileName else 3)], "%Y%m%d").strftime("%Y-%m-%d")
-	band = fileName.split('_')[-1].replace('.TIF', '').replace('.txt', '')
+	band = fileName.split('_')[-1].replace('.TIF', '').replace('.txt', '').replace('.tif', '')
 	coordinates = fileName.split('_')[(3 if 'Clipped_' in fileName else 2)]
 	return date, band, coordinates
 
 import shutil
 def moveToRaw(file: str, typeFolder: str, date, city):
 	filePath = os.path.join(unprocessed_dir, file)
-	dateFolder = datetime.strptime(date, "%Y-%m-%d").strftime("%m-%Y")
-	target_folder = os.path.join(raw_dir,  typeFolder, dateFolder, city)
+	dateFolder = datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m")
+	target_folder = os.path.join(raw_dir, typeFolder, city, dateFolder)
 	os.makedirs(target_folder, exist_ok=True)
 	target_file_path = os.path.join(target_folder, file)
 	shutil.copy2(filePath, target_file_path)
@@ -242,6 +261,7 @@ def downloadFile(url):
 
 def prompt_ERS_login():
     print("Logging in...\n")
+    notifySelf("Logging in...")
 
     # Read credentials from the file
     with open('credentials.txt', 'r') as file:
@@ -257,12 +277,13 @@ def prompt_ERS_login():
     if response.status_code == 200:  # Check for successful response
         apiKey = response.json().get('data')
         print('\nLogin Successful, API Key Received!')
+        notifySelf("Login Successful, API Key Received!")
         headers = {'X-Auth-Token': apiKey}
         return apiKey
     else:
         print("\nLogin was unsuccessful, please try again or create an account at: https://ers.cr.usgs.gov/register.")
 
-def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax):
+def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax=15):
     month = str(month)
     if len(month) == 1:
         month = "0" + month
@@ -280,7 +301,7 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax):
     cloudCoverFilter = {'min': 0, 'max': cloudMax}
     if datasetName == 'landsat_ot_c2_l2':
         temporal = {'start': f'{year}-{month}-01', 'end': f'{year}-{month}-31'}
-    elif datasetName == 'nlcd_collection_lndcov' or datasetName == 'srtm_v3':
+    elif datasetName == 'nlcd_collection_lndcov':
         temporal = {'start': f'{year}-01-01', 'end': f'{year}-12-31'}
     else:
         temporal = {}
