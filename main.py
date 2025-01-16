@@ -38,6 +38,7 @@ def gatherData(dataset, year, city, aoi_geodf, isGroundTruth = False):
     bandNames = {'B2', 'B3', 'B4', 'B5', 'B6', 'ST_B10'}
     if isGroundTruth:
         bandNames = {'ST_B10'}
+        return
     includeMetadata = True
     #%%
     # Cell 6: Search for Scenes
