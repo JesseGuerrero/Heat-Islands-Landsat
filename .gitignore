@@ -1,13 +1,4 @@
-/credentials.txt
-/Unprocessed/
-/RawClippedRasters/
-/progress.txt
-/testRawClippedRasters.zip
 /Data/
-/Clipped/
 /.ipynb_checkpoints/
-/Clipped.zip
-/Clipped2.zip
-/Cloud.txt
-/Backups/
-/voice.txt
+/Logs/
+/Temp/

@@ -5,48 +5,40 @@ import time
 import re
 import threading
 import datetime
-from geojson import Polygon
-from geopandas import GeoDataFrame
 import socket
 import rasterio
 import os
 import warnings
 import smtplib
+import tarfile
+import shutil
+from datetime import datetime
+from tqdm import tqdm
 from email.mime.text import MIMEText
 from pyproj import Transformer
+from geojson import Polygon
+from geopandas import GeoDataFrame
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
 
 maxthreads = 5 # Threads count for downloads
 sema = threading.Semaphore(value=maxthreads)
-label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") # Customized label using date time
 threads = []
 serviceUrl = "https://m2m.cr.usgs.gov/api/api/json/stable/"
-unprocessed_dir = './Unprocessed'
-raw_dir = './RawClippedRasters'
-clipped_dir = './Clipped'
+temp_dir = './Temp'
+unprocessed_dir = temp_dir + '/Temp'
+raw_dir = temp_dir + '/RawRasters'
+clipped_dir = temp_dir + '/Clipped'
 data_dir = './Data'
-dirs = [unprocessed_dir, data_dir, raw_dir, clipped_dir,
-		data_dir + "/LST", data_dir + "/NDVI", data_dir + "/NDWI", data_dir + "/Land_Cover", data_dir + "/Albedo", data_dir + "/DEM", data_dir + "/labelLST",
-		raw_dir + "/LST", raw_dir + "/NDVI", raw_dir + "/NDWI", raw_dir + "/Land_Cover", raw_dir + "/Albedo", raw_dir + "/DEM", raw_dir + "/labelLST"]
-for d in dirs:
-	if not os.path.exists(d):
-		try:
-			os.makedirs(d)
-			print(f"Directory '{d}' created successfully.")
-		except OSError as e:
-			print(f"Error creating directory '{d}': {e}")
-	else:
-		print(f"Directory '{d}' already exists.")
-if not os.path.exists('progress.txt'):
-	with open('progress.txt', "w") as file:
-		pass
-if not os.path.exists('Cloud.txt'):
-	with open('Cloud.txt', "w") as file:
-		pass
-if not os.path.exists('credentials.txt'):
-	print('In credentials place...\n---\nUsername\nToken\n---')
-	with open('credentials.txt', "w") as file:
-		pass
+
+for i, log in enumerate(['credentials.txt', 'voice.txt', 'raw_progress.txt', 'clip_progress.txt', 'cloud_progress.txt', 'formula.txt']):
+    if not os.path.exists(log):
+        if i == 0:
+            print('In credentials place...\n---\nUsername\nToken\n\n---')
+            sys.exit()
+        if i == 1:
+            print('Optional Google Voice Notification:\nPlace the following in voice.txt\n---\nsubject\nto_email\nfrom_email\napiToken\n---')
+        with open('./Logs/' + log, "w") as file:
+            pass
 
 def getLongitudeLatitudeOfTif(filePath) -> list:
 	# Extract raster bounds using rasterio
@@ -89,8 +81,8 @@ def checkPolygonInRasterCompletely(polygon: GeoDataFrame, ras: str):
 
 def notifySelf(body):
     try:
-        if os.path.exists('./voice.txt'):
-            with open('credentials.txt', 'r') as file:
+        if os.path.exists('./Logs/voice.txt'):
+            with open('./Logs/voice.txt', 'r') as file:
                 subject = file.readline().strip()
                 to_email = file.readline().strip()
                 from_email = file.readline().strip()
@@ -107,14 +99,12 @@ def notifySelf(body):
     except Exception as e:
         print("unable to send text...")
 
-from datetime import datetime
 def getMetaFromLandsatTIRs(fileName) -> tuple:
-	date = datetime.strptime(fileName.split('_')[(4 if 'Clipped_' in fileName else 3)], "%Y%m%d").strftime("%Y-%m-%d")
+	date = datetime.strptime(fileName.split('_')[3], "%Y%m%d").strftime("%Y-%m-%d")
 	band = fileName.split('_')[-1].replace('.TIF', '').replace('.txt', '').replace('.tif', '')
-	coordinates = fileName.split('_')[(3 if 'Clipped_' in fileName else 2)]
+	coordinates = fileName.split('_')[2]
 	return date, band, coordinates
 
-import shutil
 def moveToRaw(file: str, typeFolder: str, date, city):
 	filePath = os.path.join(unprocessed_dir, file)
 	dateFolder = datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m")
@@ -123,12 +113,13 @@ def moveToRaw(file: str, typeFolder: str, date, city):
 	target_file_path = os.path.join(target_folder, file)
 	shutil.copy2(filePath, target_file_path)
 
-def moveToCloud(file: str, typeFolder: str, date, city):
-	filePath = os.path.join(unprocessed_dir, file)
-	target_folder = os.path.join('./Cloud', typeFolder, city, date)
-	os.makedirs(target_folder, exist_ok=True)
-	target_file_path = os.path.join(target_folder, file)
-	shutil.copy2(filePath, target_file_path)
+def moveToClipped(filePath: str, fileName, typeFolder: str, date, city):
+    target_folder = os.path.join(clipped_dir, typeFolder, city, date)
+    os.makedirs(target_folder, exist_ok=True)
+    target_file_path = os.path.join(target_folder, fileName)
+    if os.path.exists(target_file_path):
+        return
+    shutil.copy2(filePath, target_file_path)
 
 def clear_folder(folder_path):
     for file in os.listdir(folder_path):
@@ -138,6 +129,25 @@ def clear_folder(folder_path):
             print(f"Deleted file: {file_path}")
         elif os.path.isdir(file_path):
             os.rmdir(file_path)
+
+def get_file_paths(folder_path):
+    file_paths = []
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            full_path = os.path.abspath(os.path.join(root, file))
+            file_paths.append(full_path)
+    return file_paths
+
+def save_file_paths_to_log(file_paths, log_file="./Logs/clipped_processed.txt"):
+    with open(log_file, "w") as log:
+        for path in tqdm(file_paths, desc="Saving to log"):
+            log.write(path + "\n")  # Write each path followed by a newline
+    print(f"File paths saved to {log_file}")
+
+def read_file_paths_from_log(log_file="./Logs/clipped_processed.txt"):
+    with open(log_file, "r") as log:
+        file_paths = [line.strip() for line in log]  # Remove any leading/trailing whitespace
+    return file_paths
 
 def sendRequest(url, data, apiKey=None, exitIfNoResponse=True): #Official sendRequest script from USGS website
 	json_data = json.dumps(data)
@@ -191,7 +201,6 @@ def sendRequest(url, data, apiKey=None, exitIfNoResponse=True): #Official sendRe
 	response.close()
 	return output['data']
 
-import tarfile
 def extract_specific_files(tar_path, extract_to, include_keywords=None):
     with tarfile.open(tar_path, "r") as tar:
         for member in tar.getmembers():
@@ -205,7 +214,7 @@ def runDownload(threads, url):
     thread.start()
 
 def downloadFile(url):
-    """Download a file and handle HTTP 429 (rate limitation)."""
+    """Slightly edited official M2M Function. We can change this if desired."""
     sema.acquire()
     try:
         while True:
@@ -235,7 +244,7 @@ def prompt_ERS_login():
     notifySelf("Logging in...")
 
     # Read credentials from the file
-    with open('credentials.txt', 'r') as file:
+    with open('./Logs/credentials.txt', 'r') as file:
         username = file.readline().strip()
         token = file.readline().strip()
 
@@ -284,5 +293,28 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax=15):
             'cloudCoverFilter': cloudCoverFilter
         }
     }
+
+def checkPolygonInRasterCompletely(polygon: GeoDataFrame, ras: str):
+    polygon = polygon.geometry.iloc[0]
+    with rasterio.open(ras) as src:
+        bounds = src.bounds
+        raster_bounds = Polygon([
+            (bounds.left, bounds.top),
+            (bounds.right, bounds.top),
+            (bounds.right, bounds.bottom),
+            (bounds.left, bounds.bottom),
+            (bounds.left, bounds.top)
+        ])
+        nodata_value = src.nodata
+    is_within = raster_bounds.contains(polygon)
+    if not is_within:
+        return False
+    with rasterio.open(ras) as src:
+        for x, y in polygon.exterior.coords:
+            row, col = src.index(x, y)
+            pixel_value = src.read(1)[row, col]
+            if pixel_value == nodata_value:
+                return False
+    return True
 
 apiKey = prompt_ERS_login()

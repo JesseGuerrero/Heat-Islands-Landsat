@@ -1,6 +1,6 @@
 # TODO
-1. Clean main.py
-2. Remove credentials from commits
+1. ~~Clean main.py~~
+2. ~~Remove credentials from commits~~
 3. (All 5 Hosts) Finish cloud and clipping downloads/processing
 4. (All 5) Get a cloud percentage and cull tifs over 25% Cloud
 5. (All 5) Delete all folders and MTL.txt without a tif
