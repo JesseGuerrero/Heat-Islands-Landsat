@@ -12,11 +12,12 @@ import warnings
 import smtplib
 import tarfile
 import shutil
+import numpy as np
 from datetime import datetime
 from tqdm import tqdm
 from email.mime.text import MIMEText
 from pyproj import Transformer
-from geojson import Polygon
+from shapely.geometry import Polygon
 from geopandas import GeoDataFrame
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
 
@@ -28,10 +29,11 @@ temp_dir = './Temp'
 unprocessed_dir = temp_dir + '/Temp'
 raw_dir = temp_dir + '/RawRasters'
 clipped_dir = temp_dir + '/Clipped'
+process_dir = temp_dir + '/Process'
 data_dir = './Data'
 
-for i, log in enumerate(['credentials.txt', 'voice.txt', 'raw_progress.txt', 'clip_progress.txt', 'cloud_progress.txt', 'formula.txt']):
-    if not os.path.exists(log):
+for i, log in enumerate(['credentials.txt', 'voice.txt', 'raw_progress.txt', 'clipped_processed.txt', 'formula_progress.txt']):
+    if not os.path.exists('./Logs/' + log):
         if i == 0:
             print('In credentials place...\n---\nUsername\nToken\n\n---')
             sys.exit()
@@ -87,13 +89,13 @@ def notifySelf(body):
                 to_email = file.readline().strip()
                 from_email = file.readline().strip()
                 apiToken = file.readline().strip()
-                msg = MIMEText(f'{socket.gethostname()}: {body}')
-                msg["Subject"] = subject
-                msg["From"] = from_email
-                msg["To"] = to_email
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                    server.login(from_email, apiToken)
-                    server.sendmail(from_email, to_email, msg.as_string())
+                # msg = MIMEText(f'{socket.gethostname()}: {body}')
+                # msg["Subject"] = subject
+                # msg["From"] = from_email
+                # msg["To"] = to_email
+                # with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                #     server.login(from_email, apiToken)
+                #     server.sendmail(from_email, to_email, msg.as_string())
         else:
             print(body)
     except Exception as e:
@@ -122,6 +124,7 @@ def moveToClipped(filePath: str, fileName, typeFolder: str, date, city):
     shutil.copy2(filePath, target_file_path)
 
 def clear_folder(folder_path):
+    os.makedirs(folder_path, exist_ok=True)
     for file in os.listdir(folder_path):
         file_path = os.path.join(folder_path, file)
         if os.path.isfile(file_path) or os.path.islink(file_path):
@@ -138,8 +141,8 @@ def get_file_paths(folder_path):
             file_paths.append(full_path)
     return file_paths
 
-def save_file_paths_to_log(file_paths, log_file="./Logs/clipped_processed.txt"):
-    with open(log_file, "w") as log:
+def save_paths_to_log(file_paths, log_file="./Logs/clipped_processed.txt"):
+    with open(log_file, "a") as log:
         for path in tqdm(file_paths, desc="Saving to log"):
             log.write(path + "\n")  # Write each path followed by a newline
     print(f"File paths saved to {log_file}")
@@ -294,27 +297,31 @@ def createSceneSearchPayload(datasetName, aoi_geodf, year, month, cloudMax=15):
         }
     }
 
-def checkPolygonInRasterCompletely(polygon: GeoDataFrame, ras: str):
-    polygon = polygon.geometry.iloc[0]
-    with rasterio.open(ras) as src:
-        bounds = src.bounds
-        raster_bounds = Polygon([
-            (bounds.left, bounds.top),
-            (bounds.right, bounds.top),
-            (bounds.right, bounds.bottom),
-            (bounds.left, bounds.bottom),
-            (bounds.left, bounds.top)
-        ])
-        nodata_value = src.nodata
-    is_within = raster_bounds.contains(polygon)
-    if not is_within:
-        return False
-    with rasterio.open(ras) as src:
-        for x, y in polygon.exterior.coords:
-            row, col = src.index(x, y)
-            pixel_value = src.read(1)[row, col]
-            if pixel_value == nodata_value:
-                return False
-    return True
+def calculate_cloud_cover_percentage(qa_pixel_path):
+    with rasterio.open(qa_pixel_path) as src:
+        qa_pixel = src.read(1)  # Read the first band (QA_PIXEL)
+        nodata_value = src.nodata  # Get NoData value from raster metadata
+
+    if nodata_value is not None:
+        nodata_mask = (qa_pixel == nodata_value)
+    else:
+        nodata_mask = np.zeros_like(qa_pixel, dtype=bool)  # No NoData pixels
+
+    cloud_confidence_mask = (qa_pixel & 0b00011000) >> 3
+    cloud_shadow_mask = (qa_pixel & 0b00100000) >> 5
+    cloud_pixels = (cloud_confidence_mask >= 1) | (cloud_shadow_mask == 1)
+
+    valid_pixels = ~nodata_mask
+    cloud_pixels = cloud_pixels & valid_pixels
+
+    total_valid_pixels = np.sum(valid_pixels)
+    cloud_pixel_count = np.sum(cloud_pixels)
+
+    if total_valid_pixels > 0:
+        cloud_cover_percentage = (cloud_pixel_count / total_valid_pixels) * 100
+    else:
+        cloud_cover_percentage = 0.0
+
+    return int(cloud_cover_percentage)
 
 apiKey = prompt_ERS_login()
