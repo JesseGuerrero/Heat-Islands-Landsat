@@ -89,13 +89,13 @@ def notifySelf(body):
                 to_email = file.readline().strip()
                 from_email = file.readline().strip()
                 apiToken = file.readline().strip()
-                # msg = MIMEText(f'{socket.gethostname()}: {body}')
-                # msg["Subject"] = subject
-                # msg["From"] = from_email
-                # msg["To"] = to_email
-                # with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                #     server.login(from_email, apiToken)
-                #     server.sendmail(from_email, to_email, msg.as_string())
+                msg = MIMEText(f'{socket.gethostname()}: {body}')
+                msg["Subject"] = subject
+                msg["From"] = from_email
+                msg["To"] = to_email
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                    server.login(from_email, apiToken)
+                    server.sendmail(from_email, to_email, msg.as_string())
         else:
             print(body)
     except Exception as e:
