@@ -12,13 +12,33 @@ import rasterio
 import rioxarray
 import socket
 import traceback
+import argparse
+
+# Create an argument parser
+parser = argparse.ArgumentParser(description="Process data for a range of years.")
+
+# Add arguments for startYear and endYear
+parser.add_argument(
+    "--startYear",
+    type=int,
+    required=True,
+    help="The starting year of the data range."
+)
+parser.add_argument(
+    "--endYear",
+    type=int,
+    required=True,
+    help="The ending year of the data range."
+)
+args = parser.parse_args()
+startYear, endYear = args.startYear, args.endYear
 
 def gatherRawRasters(dataset, year, city, aoi_geodf):
     print(f'Gathering {dataset} for {year} in {city}.')
     if dataset == 'srtm_v3' and year != 2014:
         return
     bandNames = {'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'ST_B10', 'ST_EMIS', 'QA_PIXEL'}
-    for month in range(1, 5):
+    for month in range(1, 13):
         if month == 1:
             notifySelf(f'Starting on year {year} in dataset {dataset} as city {city}...')
         #Search for scenes
@@ -148,7 +168,7 @@ def gatherRawRasters(dataset, year, city, aoi_geodf):
     print('progress written for', city, year, dataset)
 #%%
 datasets = ['landsat_ot_c2_l2', 'srtm_v3', 'nlcd_collection_lndcov']
-years = [year for year in range(2013, 2019)]
+years = [year for year in range(startYear, endYear)]
 
 # Load city footprints from Esri Living Atlas
 shapefile_folder = "./Data/area_shp/"
@@ -204,10 +224,10 @@ for file in os.listdir(shapefile_folder):
 #Get all tifs, copy everything else
 notifySelf("Starting clip list of raster paths...")
 allGeoFiles = get_file_paths(raw_dir)
-i, fileFivePercent = 0, int(len(allGeoFiles)//20)
+i, file25Percent = 0, int(len(allGeoFiles)//4)
 usableTIFFs = []
 for geoFilePath in tqdm(allGeoFiles, desc="Make raster list/move txt files"):
-    if i % fileFivePercent == 0:
+    if i % file25Percent == 0:
         percentage_done = int((i / len(allGeoFiles)) * 100)
         notifySelf(f'We are at {percentage_done}% clipped')
     i+=1
@@ -226,11 +246,11 @@ for geoFilePath in tqdm(allGeoFiles, desc="Make raster list/move txt files"):
 save_paths_to_log(usableTIFFs)
 #%%
 filesList = read_file_paths_from_log()
-i, fileFivePercent = 0, int(len(filesList) // 20)
+i, file25Percent = 0, int(len(filesList) // 4)
 notifySelf("Starting clip Rasters...")
 #Clip, project and move to new folder.
 for geoFilePath in tqdm(filesList, desc="Clipping rasters"):
-    if i % fileFivePercent == 0:
+    if i % file25Percent == 0:
         percentage_done = int((i / len(filesList)) * 100)
         notifySelf(f'We are at {percentage_done}% clipped')
     i += 1
@@ -258,16 +278,6 @@ for geoFilePath in tqdm(filesList, desc="Clipping rasters"):
 print("Clipped and moved raw rasters successfully.")
 notifySelf("Clipped and moved raw rasters successfully.")
 #%%
-file_path = "/work/ubh496/heat-island-test/Temp/Clipped/oli/Albuquerque_NM/2014-01/LC08_L2SP_033036_20140116_20200912_02_T1_QA_PIXEL.TIF"
-
-# Get the absolute path of the folder
-folder_path = os.path.dirname(os.path.abspath(file_path))
-
-print("File Path:", file_path)
-print("Folder Path:", folder_path)
-#%%
-
-
 def list_files_in_folder(folder_path):
     files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
     return files
@@ -280,14 +290,20 @@ def moveToProcess(filePath: str, fileName, typeFolder: str, date, city):
         return
     shutil.copy2(filePath, target_file_path)
 
-#Take out too much cloud cover
+#Remove scenes with excessive cloud cover
+i, file25Percent = 0, int(len(filesList) // 4)
+notifySelf("Starting cloud removal...")
 process_dir = temp_dir + '/Process'
 allClippedFiles, validCloudFiles = [], []
 for clippedFilePath in get_file_paths(clipped_dir):
     if 'QA_PIXEL' in clippedFilePath:
         allClippedFiles.append(clippedFilePath)
 for clippedFilePath in tqdm(allClippedFiles, desc="Filtering Clouds & Missing Tifs"):
-    if calculate_cloud_cover_percentage(clippedFilePath) < 25:
+    if i % file25Percent == 0:
+        percentage_done = int((i / len(filesList)) * 100)
+        notifySelf(f'We are at {percentage_done}% clipped')
+    i += 1
+    if calculate_cloud_cover_percentage(clippedFilePath) < 10:
         fileParts = clippedFilePath.split('/')
         fileName, date, city, dataType = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4]
         sceneIdentifyingName = '_'.join(fileName.split('_')[:7])
@@ -295,7 +311,7 @@ for clippedFilePath in tqdm(allClippedFiles, desc="Filtering Clouds & Missing Ti
         for sceneFileAbsolutePath in list_files_in_folder(os.path.dirname(os.path.abspath(clippedFilePath))):
             if sceneIdentifyingName in sceneFileAbsolutePath:
                 sceneFiles.append(sceneFileAbsolutePath)
-        if len(sceneFiles) == 9:
+        if len(sceneFiles) == 10:
             for sceneFile in sceneFiles:
                 moveToProcess(sceneFile, sceneFile.split('/')[-1], dataType, date, city)
 #%%
@@ -350,59 +366,35 @@ def retrieve_ndvi(nir_band_path, red_band_path, output_path):
         with rasterio.open(output_path, 'w', **profile) as dst:
             dst.write(ndvi, 1)
 
-# def retrieve_emissivity(nir_band_path, red_band_path, output_path, ndvi_veg=0.85, ndvi_nonveg=0.18, emissivity_veg=0.99, emissivity_nonveg=0.97):
-#     with rasterio.open(nir_band_path) as nir_src, rasterio.open(red_band_path) as red_src:
-#         nir = nir_src.read(1).astype('float32') / 10_000
-#         red = red_src.read(1).astype('float32') / 10_000
-#         nir = np.clip(nir, 0, 1)
-#         red = np.clip(red, 0, 1)
-#
-#         # Get nodata value
-#         nir_nodata = nir_src.nodata
-#         red_nodata = red_src.nodata
-#
-#         # Compute NDVI only for valid pixels
-#         valid_mask = (nir != nir_nodata) & (red != red_nodata)
-#         ndvi = np.where(valid_mask, np.where((nir + red) == 0, 0, (nir - red) / (nir + red)), nir_nodata)
-#
-#         # Compute FVC
-#         fvc = np.where(
-#             valid_mask & (ndvi > ndvi_nonveg),
-#             np.where(
-#                 ndvi < ndvi_veg,
-#                 ((ndvi - ndvi_nonveg) / (ndvi_veg - ndvi_nonveg)) ** 2,
-#                 1.0
-#             ),
-#             0.0
-#         )
-#
-#         # Calculate emissivity only for valid pixels
-#         emissivity = np.where(valid_mask, emissivity_nonveg * (1 - fvc) + emissivity_veg * fvc, nir_nodata)
-#
-#         profile = nir_src.profile
-#         profile.update(dtype=rasterio.float32, count=1)
-#
-#         with rasterio.open(output_path, 'w', **profile) as dst:
-#             dst.write(emissivity, 1)
-
-
-def retrieve_lst(band10_path, emis, constants, output_path, convert_to_fahrenheit=True):
+def retrieve_lst(band10_path, emis, cloud, constants, output_path, convert_to_fahrenheit=True):
     wavelength = 10.8e-6  # Band 10 wavelength in meters
     rho = 1.438e-2  # Planck's constant divided by Boltzmann constant in mK
-    with rasterio.open(band10_path) as band10_src, rasterio.open(emis) as emissivity_src:
-        # Read Band 10 pixel values (Q_cal) and emissivity
+
+    with rasterio.open(band10_path) as band10_src, \
+         rasterio.open(emis) as emissivity_src, \
+         rasterio.open(cloud) as cloud_src:
+
+        # Read Band 10 pixel values (Q_cal), emissivity, and QA_PIXEL
         q_cal = band10_src.read(1).astype('float32')
         emissivity = emissivity_src.read(1).astype('float32')
+        qa_pixel = cloud_src.read(1).astype('uint16')
 
         # Get nodata value
         band10_nodata = band10_src.nodata
         emissivity_nodata = emissivity_src.nodata
 
-        # Initialize LST array with nodata where applicable
-        lst = np.full_like(q_cal, band10_nodata, dtype='float32')
-
         # Valid mask to exclude nodata values
         valid_mask = (q_cal != band10_nodata) & (emissivity != emissivity_nodata)
+
+        # Scale emissivity if it is scaled by a factor of 10,000
+        emissivity = np.where(valid_mask, emissivity / 10000, emissivity_nodata)
+
+        # Extract cloud confidence using the ArcGIS Pro logic
+        # Equivalent to Con(BitwiseAnd("QA_PIXEL", 192) < 64, 1, 0)
+        cloud_mask = (qa_pixel & 192) < 64  # True for non-cloud-covered pixels
+
+        # Include only non-cloud-covered pixels
+        valid_mask = valid_mask & ~cloud_mask
 
         # Calculate Radiance (L_lambda) only for valid pixels
         l_lambda = np.where(valid_mask, constants['ML'] * q_cal + constants['AL'], band10_nodata)
@@ -416,6 +408,7 @@ def retrieve_lst(band10_path, emis, constants, output_path, convert_to_fahrenhei
         if convert_to_fahrenheit:
             lst = np.where(valid_mask, (lst - 273.15) * (9 / 5) + 32, band10_nodata)
 
+        # Write the LST raster to output
         profile = band10_src.profile
         profile.update(dtype=rasterio.float32, count=1)
 
@@ -509,6 +502,8 @@ for filePath in get_file_paths(process_dir):
 for filePath in allQAPixelFiles:
     fileParts = filePath.split('/')
     fileName, date, city, dataType = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4]
+    # if "San_Antonio" not in city:
+    #     continue
     sceneIdentifyingName = '_'.join(fileName.split('_')[:7])
     sceneFiles = []
     for sceneFileAbsolutePath in list_files_in_folder(os.path.dirname(os.path.abspath(filePath))):
@@ -518,6 +513,8 @@ for filePath in allQAPixelFiles:
         band = sceneFile.split('_')[-1].replace('.TIF', '').replace('.txt', '').replace('.tif', '')
         if band == 'MTL':
             MTL = sceneFile
+        if band == 'PIXEL':
+            cloud = sceneFile
         if band == 'B10':
             band10 = sceneFile
         if band == 'B2':
@@ -543,7 +540,7 @@ for filePath in allQAPixelFiles:
         retrieve_ndvi(band5, band4, getDataPath('NDVI.tif', 'X', date, city))
         retrieve_ndwi(band3, band5, getDataPath('NDWI.tif', 'X', date, city))
         retrieve_albedo(band2, band3, band4, band5, band6, getDataPath('Albedo.tif', 'X', date, city))
-        retrieve_lst(band10, emis, constants, getDataPath('LST.tif', 'y', date, city))
+        retrieve_lst(band10, emis, cloud, constants, getDataPath('LST.tif', 'y', date, city))
         create_heat_index(getDataPath('LST.tif', 'y', date, city), getDataPath('Heat_Index.tif', 'y', date, city))
 #%%
 
