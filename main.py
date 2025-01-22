@@ -109,10 +109,8 @@ def gatherRawRasters(dataset, year, city, aoi_geodf):
             results = download_request_results['preparingDownloads']
             for result in results:
                 runDownload(threads, result['url'])
-        print("Before thread")
         for t in threads:
             t.join()
-        print("after thread")
         for file in os.listdir(unprocessed_dir):
             if file.endswith('.tar'):
                 try:
@@ -168,7 +166,7 @@ def gatherRawRasters(dataset, year, city, aoi_geodf):
     print('progress written for', city, year, dataset)
 #%%
 datasets = ['landsat_ot_c2_l2', 'srtm_v3', 'nlcd_collection_lndcov']
-years = [year for year in range(startYear, endYear)]
+years = [year for year in range(2013, 2020)]
 
 # Load city footprints from Esri Living Atlas
 shapefile_folder = "./Data/area_shp/"
@@ -186,7 +184,6 @@ print("Shapefiles loaded successfully.")
 
 for j, dataset in enumerate(datasets):
     for year in years:
-        i = 0
         while i < int(len(cities)):
             try:
                 clear_folder(unprocessed_dir)
@@ -199,7 +196,6 @@ for j, dataset in enumerate(datasets):
                         print(f"{city}, {year}, {dataset} was gathered in the past.")
                     else:
                         gatherRawRasters(dataset, year, city, aoi_geodf)
-                i += 1
             except Exception as e:
                 print("An exception occurred:")
                 print(f"Exception: {e}")
