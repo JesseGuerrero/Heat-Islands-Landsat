@@ -184,7 +184,7 @@ print("Shapefiles loaded successfully.")
 
 for j, dataset in enumerate(datasets):
     for year in years:
-	i = 0
+        i = 0
         while i < int(len(cities)):
             try:
                 clear_folder(unprocessed_dir)
@@ -197,7 +197,7 @@ for j, dataset in enumerate(datasets):
                         print(f"{city}, {year}, {dataset} was gathered in the past.")
                     else:
                         gatherRawRasters(dataset, year, city, aoi_geodf)
-		i += 1
+                i += 1
             except Exception as e:
                 print("An exception occurred:")
                 print(f"Exception: {e}")
