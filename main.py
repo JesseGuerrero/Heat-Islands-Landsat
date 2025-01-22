@@ -166,7 +166,7 @@ def gatherRawRasters(dataset, year, city, aoi_geodf):
     print('progress written for', city, year, dataset)
 #%%
 datasets = ['landsat_ot_c2_l2', 'srtm_v3', 'nlcd_collection_lndcov']
-years = [year for year in range(2013, 2020)]
+years = [year for year in range(startYear, endYear+1)]
 
 # Load city footprints from Esri Living Atlas
 shapefile_folder = "./Data/area_shp/"
