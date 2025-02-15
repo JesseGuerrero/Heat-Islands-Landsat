@@ -5,7 +5,10 @@
 /torchgeo/
 __pycache__/
 *.pyc
-preprocessed_data/*
+/Data/predictions/
+/Data/preprocessed/
+/Data/X/
+/Data/y/
 .idea
 lightning_logs/
 
