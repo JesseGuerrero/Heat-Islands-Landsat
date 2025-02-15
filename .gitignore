@@ -3,3 +3,9 @@
 /Logs/
 /Temp/
 /torchgeo/
+__pycache__/
+*.pyc
+preprocessed_data/*
+.idea
+lightning_logs/
+
