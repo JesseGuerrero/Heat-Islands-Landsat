@@ -84,7 +84,7 @@ class LandsatDataset(Dataset):
 
         return sample
 
-
+import shutil
 class LandsatDataModule(pl.LightningDataModule):
     def __init__(
             self,
@@ -113,7 +113,64 @@ class LandsatDataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         pass
 
+
+    def preprocessImages(self):
+        albedo_files = []
+        x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
+        def clip_and_save_raster(src_path, dst_path):
+            if os.path.exists(dst_path):
+                return
+            with rasterio.open(src_path) as src:
+                data = src.read(1)
+                profile = src.profile.copy()
+                
+                height, width = data.shape
+                new_height = (height // 32) * 32
+                new_width = (width // 32) * 32
+                
+                start_y = (height - new_height) // 2
+                start_x = (width - new_width) // 2
+                
+                clipped_data = data[start_y:start_y + new_height, 
+                                start_x:start_x + new_width]
+                
+                profile.update({
+                    'height': new_height,
+                    'width': new_width,
+                    'transform': rasterio.windows.transform(
+                        rasterio.windows.Window(start_x, start_y, new_width, new_height),
+                        src.transform
+                    )
+                })
+
+                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                
+                with rasterio.open(dst_path, 'w', **profile) as dst:
+                    dst.write(clipped_data, 1)
+
+        for file_path in self.get_file_paths(x_dir):
+            date = file_path.split('/')[-2]
+            if self.debug and '2014' not in date: 
+                continue
+            if 'Albedo' in file_path:
+                albedo_files.append(file_path)
+        
+        for albedo_path in albedo_files:
+            date = file_path.split('/')[-2]
+            scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
+                        if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
+            
+            for raster_file in scene_files:
+                src_path = os.path.join(os.path.dirname(albedo_path), raster_file)
+                dst_path = src_path.replace('Data/', 'Data/preprocess/')                
+                clip_and_save_raster(src_path, dst_path)
+            
+            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')            
+            dst_path = lst_path.replace('Data/', 'Data/preprocess/')
+            clip_and_save_raster(lst_path, dst_path)
+
     def prepare_by_city(self):
+        self.preprocessImages()
         def sortCitiesToFileList(cities_for_task, all_cities):
             file_list = []
             for city in cities_for_task:
@@ -122,7 +179,7 @@ class LandsatDataModule(pl.LightningDataModule):
             return file_list
         cities = {}
         albedo_files = []
-        x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
+        x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in self.get_file_paths(x_dir):
             date = file_path.split('/')[-2]
             if self.debug and '2014' not in date: 
