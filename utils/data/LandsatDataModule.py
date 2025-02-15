@@ -118,14 +118,14 @@ class LandsatDataModule(pl.LightningDataModule):
                 with rasterio.open(dst_path, 'w', **profile) as dst:
                     dst.write(clipped_data, 1)
 
-        for file_path in self.get_file_paths(x_dir):
+        for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Preproccessing)...'):
             date = file_path.split('/')[-2]
             if self.debug and '2014' not in date: 
                 continue
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
         
-        for albedo_path in tqdm(albedo_filesdesc='Preprocessing images'):
+        for albedo_path in tqdm(albedo_filesdesc='Preprocessing images...'):
             date = file_path.split('/')[-2]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                         if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
@@ -150,14 +150,14 @@ class LandsatDataModule(pl.LightningDataModule):
         cities = {}
         albedo_files = []
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
-        for file_path in self.get_file_paths(x_dir):
+        for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes(Sort by City)...'):
             date = file_path.split('/')[-2]
             if self.debug and '2014' not in date: 
                 continue
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
         
-        for albedo_path in albedo_files:
+        for albedo_path in tqdm(albedo_files, desc='Preparing scene by city...'):
             fileParts = albedo_path.split('/')
             date, city = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4], fileParts[-5]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
@@ -188,25 +188,18 @@ class LandsatDataModule(pl.LightningDataModule):
         print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
 
     def prepare_by_scene(self):
-        def get_file_paths(self, folder_path: str) -> List[str]:
-            file_paths = []
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    full_path = os.path.abspath(os.path.join(root, file))
-                    file_paths.append(full_path)
-            return file_paths
         file_list = []
         albedo_files = []
 
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
-        for file_path in get_file_paths(x_dir):
+        for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Sort by Random Scene)...'):
             date = file_path.split('/')[-2]
             if self.debug and '2014' not in date: 
                 continue
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
 
-        for albedo_path in albedo_files:
+        for albedo_path in tqdm(albedo_files, desc='Preparing scene by scene...'):
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                            if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
 
@@ -226,6 +219,14 @@ class LandsatDataModule(pl.LightningDataModule):
         self.val_files = file_list[train_size:train_size + val_size]
         self.test_files = file_list[train_size + val_size:]
         # print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
+
+    def get_file_paths(self, folder_path: str) -> List[str]:
+        file_paths = []
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                full_path = os.path.abspath(os.path.join(root, file))
+                file_paths.append(full_path)
+        return file_paths
 
     def prepare_data(self):
         if self.byCity:
