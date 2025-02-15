@@ -1,3 +1,4 @@
+from tqdm import tqdm
 
 class LandsatDataset(Dataset):
     def __init__(self, file_list, transform=None, nodata_fill_value=-9999.0):
@@ -11,69 +12,40 @@ class LandsatDataset(Dataset):
     def __getitem__(self, idx):
         sample_files = self.file_list[idx]
 
-        # Process input channels
         channels = []
-        for key in ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']:
+        channel_masks = []
+        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
+        for key in input_keys:
             with rasterio.open(sample_files[key]) as src:
                 channel = src.read(1).astype(np.float32)
-            channel = np.where(np.isnan(channel), 0.0, channel)
-            channels.append(channel)
+                valid_mask = ~np.isnan(channel)
+                valid_mask = valid_mask & (channel != self.nodata_fill_value)
+                channel = np.where(valid_mask, channel, 0.0)
+                channels.append(channel)
+                channel_masks.append(valid_mask)
+        
+        x = np.stack(channels, axis=0)
+        input_mask = np.stack(channel_masks, axis=0)
 
-        # Dynamic resizing
-        ref_shape = channels[0].shape
-        fixed_channels = []
-        for ch in channels:
-            if ch.shape != ref_shape:
-                ch_resized = cv2.resize(ch, (ref_shape[1], ref_shape[0]),
-                                        interpolation=cv2.INTER_LINEAR)
-                fixed_channels.append(ch_resized)
-            else:
-                fixed_channels.append(ch)
-        channels = fixed_channels
-
-        # Find the center crop dimensions divisible by 32
-        h, w = ref_shape
-        new_h = (h // 32) * 32
-        new_w = (w // 32) * 32
-
-        # Calculate the starting positions for center crop
-        start_h = (h - new_h) // 2
-        start_w = (w - new_w) // 2
-
-        # Crop all channels
-        cropped_channels = []
-        for ch in channels:
-            cropped_ch = ch[start_h:start_h + new_h, start_w:start_w + new_w]
-            cropped_channels.append(cropped_ch)
-
-        x = np.stack(cropped_channels, axis=0)
-
-        # Process target (LST)
         with rasterio.open(sample_files['LST.tif']) as src:
             y = src.read(1).astype(np.float32)
+            target_mask = ~np.isnan(y)
+            target_mask = target_mask & (y != self.nodata_fill_value)
+            y = np.where(target_mask, y, 0.0)
 
-        valid_mask = ~np.isnan(y)
-        valid_mask = valid_mask & (y != self.nodata_fill_value)
-        y = np.where(valid_mask, y, 0.0)
-
-        if y.shape != ref_shape:
-            y = cv2.resize(y, (ref_shape[1], ref_shape[0]),
-                           interpolation=cv2.INTER_LINEAR)
-            valid_mask = cv2.resize(valid_mask.astype(np.uint8),
-                                    (ref_shape[1], ref_shape[0]),
-                                    interpolation=cv2.INTER_NEAREST)
-            valid_mask = valid_mask.astype(bool)
-
-        y = y[start_h:start_h + new_h, start_w:start_w + new_w]
-        valid_mask = valid_mask[start_h:start_h + new_h, start_w:start_w + new_w]
+        combined_mask = np.all(input_mask, axis=0) & target_mask
+        
+        for i in range(x.shape[0]):
+            x[i] = np.where(combined_mask, x[i], 0.0)
+        y = np.where(combined_mask, y, 0.0)
 
         y = np.expand_dims(y, axis=0)
-        valid_mask = np.expand_dims(valid_mask, axis=0)
+        combined_mask = np.expand_dims(combined_mask, axis=0)
 
         sample = {
             'input': torch.from_numpy(x),
             'target': torch.from_numpy(y),
-            'mask': torch.from_numpy(valid_mask)
+            'mask': torch.from_numpy(combined_mask)
         }
 
         if self.transform:
@@ -81,10 +53,8 @@ class LandsatDataset(Dataset):
 
         if sample['input'].shape[1:] != sample['target'].shape[1:]:
             raise ValueError("Mismatch between input and target spatial dimensions.")
-
         return sample
 
-import shutil
 class LandsatDataModule(pl.LightningDataModule):
     def __init__(
             self,
@@ -155,7 +125,7 @@ class LandsatDataModule(pl.LightningDataModule):
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
         
-        for albedo_path in albedo_files:
+        for albedo_path in tqdm(albedo_filesdesc='Preprocessing images'):
             date = file_path.split('/')[-2]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                         if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
@@ -189,7 +159,7 @@ class LandsatDataModule(pl.LightningDataModule):
         
         for albedo_path in albedo_files:
             fileParts = albedo_path.split('/')
-            fileName, date, city, cloudCategory, dataType = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4], fileParts[-5]
+            date, city = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4], fileParts[-5]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                            if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
     
@@ -199,13 +169,11 @@ class LandsatDataModule(pl.LightningDataModule):
                 raster_dict[raster_file] = raster_path
     
             lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
-            if os.path.exists(lst_path):  # Only add if LST file exists
-                raster_dict['LST.tif'] = lst_path 
-                if city not in cities:
-                    cities[city] = {}
-                cities[city][date] = raster_dict                    
+            raster_dict['LST.tif'] = lst_path 
+            if city not in cities:
+                cities[city] = {}
+            cities[city][date] = raster_dict                    
     
-        # Split datasets
         # print(list(cities.keys()))
         train_size = int(len(list(cities.keys())) * self.train_ratio)
         val_size = int((len(list(cities.keys())) - train_size) / 2)        
@@ -230,7 +198,7 @@ class LandsatDataModule(pl.LightningDataModule):
         file_list = []
         albedo_files = []
 
-        x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
+        x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in get_file_paths(x_dir):
             date = file_path.split('/')[-2]
             if self.debug and '2014' not in date: 
@@ -248,11 +216,9 @@ class LandsatDataModule(pl.LightningDataModule):
                 raster_dict[raster_file] = raster_path
 
             lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
-            if os.path.exists(lst_path):  # Only add if LST file exists
-                raster_dict['LST.tif'] = lst_path
-                file_list.append(raster_dict)
+            raster_dict['LST.tif'] = lst_path
+            file_list.append(raster_dict)
 
-        # Split datasets
         train_size = int(len(file_list) * self.train_ratio)
         val_size = int((len(file_list) - train_size) / 2)
 
