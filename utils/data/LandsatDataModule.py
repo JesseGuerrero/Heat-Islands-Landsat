@@ -1,4 +1,13 @@
 from tqdm import tqdm
+from torch.utils.data import Dataset, DataLoader
+import rasterio
+import torch
+import pytorch_lightning as pl
+import numpy as np
+import rasterio
+import cv2
+import torch.nn as nn
+import os
 
 class LandsatDataset(Dataset):
     def __init__(self, file_list, transform=None, nodata_fill_value=-9999.0):
@@ -23,7 +32,7 @@ class LandsatDataset(Dataset):
                 channel = np.where(valid_mask, channel, 0.0)
                 channels.append(channel)
                 channel_masks.append(valid_mask)
-        
+        # print(f"Sample scene: {sample_files}")
         x = np.stack(channels, axis=0)
         input_mask = np.stack(channel_masks, axis=0)
 
@@ -81,34 +90,55 @@ class LandsatDataModule(pl.LightningDataModule):
         self.test_files = []
 
     def setup(self, stage=None):
-        pass
+        self.preprocessImages()
+        if self.byCity:
+            self.prepare_by_city()
+        else:
+            self.prepare_by_scene()
 
 
     def preprocessImages(self):
         albedo_files = []
         x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
-        def clip_and_save_raster(src_path, dst_path):
+        
+        def get_common_size(raster_paths):
+            """Get the smallest height and width that all rasters share"""
+            min_height = float('inf')
+            min_width = float('inf')
+            
+            for path in raster_paths:
+                with rasterio.open(path) as src:
+                    height, width = src.shape
+                    min_height = min(min_height, height)
+                    min_width = min(min_width, width)
+                    
+            # Make dimensions divisible by 32
+            min_height = (min_height // 32) * 32
+            min_width = (min_width // 32) * 32
+            return min_height, min_width
+
+        def clip_and_save_raster(src_path, dst_path, target_height, target_width):
             if os.path.exists(dst_path):
                 return
+                
             with rasterio.open(src_path) as src:
                 data = src.read(1)
                 profile = src.profile.copy()
                 
                 height, width = data.shape
-                new_height = (height // 32) * 32
-                new_width = (width // 32) * 32
                 
-                start_y = (height - new_height) // 2
-                start_x = (width - new_width) // 2
+                # Center the clipping window
+                start_y = (height - target_height) // 2
+                start_x = (width - target_width) // 2
                 
-                clipped_data = data[start_y:start_y + new_height, 
-                                start_x:start_x + new_width]
+                clipped_data = data[start_y:start_y + target_height, 
+                                start_x:start_x + target_width]
                 
                 profile.update({
-                    'height': new_height,
-                    'width': new_width,
+                    'height': target_height,
+                    'width': target_width,
                     'transform': rasterio.windows.transform(
-                        rasterio.windows.Window(start_x, start_y, new_width, new_height),
+                        rasterio.windows.Window(start_x, start_y, target_width, target_height),
                         src.transform
                     )
                 })
@@ -125,22 +155,34 @@ class LandsatDataModule(pl.LightningDataModule):
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
         
-        for albedo_path in tqdm(albedo_filesdesc='Preprocessing images...'):
-            date = file_path.split('/')[-2]
+        for albedo_path in tqdm(albedo_files, desc='Preprocessing images...'):
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                         if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
             
+            # Get all raster paths for this scene
+            raster_paths = []
             for raster_file in scene_files:
                 src_path = os.path.join(os.path.dirname(albedo_path), raster_file)
-                dst_path = src_path.replace('Data/', 'Data/preprocess/')                
-                clip_and_save_raster(src_path, dst_path)
+                raster_paths.append(src_path)
             
-            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')            
+            # Add LST path
+            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
+            raster_paths.append(lst_path)
+            
+            # Get common dimensions for all rasters in the scene
+            target_height, target_width = get_common_size(raster_paths)
+            
+            # Process X rasters
+            for raster_file in scene_files:
+                src_path = os.path.join(os.path.dirname(albedo_path), raster_file)
+                dst_path = src_path.replace('Data/', 'Data/preprocess/')
+                clip_and_save_raster(src_path, dst_path, target_height, target_width)
+            
+            # Process LST raster
             dst_path = lst_path.replace('Data/', 'Data/preprocess/')
-            clip_and_save_raster(lst_path, dst_path)
+            clip_and_save_raster(lst_path, dst_path, target_height, target_width)
 
     def prepare_by_city(self):
-        self.preprocessImages()
         def sortCitiesToFileList(cities_for_task, all_cities):
             file_list = []
             for city in cities_for_task:
@@ -167,7 +209,6 @@ class LandsatDataModule(pl.LightningDataModule):
             for raster_file in scene_files:
                 raster_path = os.path.join(os.path.dirname(albedo_path), raster_file)
                 raster_dict[raster_file] = raster_path
-    
             lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
             raster_dict['LST.tif'] = lst_path 
             if city not in cities:
@@ -220,19 +261,13 @@ class LandsatDataModule(pl.LightningDataModule):
         self.test_files = file_list[train_size + val_size:]
         # print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
 
-    def get_file_paths(self, folder_path: str) -> List[str]:
+    def get_file_paths(self, folder_path: str) -> list[str]:
         file_paths = []
         for root, _, files in os.walk(folder_path):
             for file in files:
                 full_path = os.path.abspath(os.path.join(root, file))
                 file_paths.append(full_path)
-        return file_paths
-
-    def prepare_data(self):
-        if self.byCity:
-            self.prepare_by_city()
-        else:
-            self.prepare_by_scene()
+        return file_paths    
 
     def train_dataloader(self):
         return DataLoader(
