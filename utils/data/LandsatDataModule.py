@@ -201,7 +201,7 @@ class LandsatDataModule(pl.LightningDataModule):
         
         for albedo_path in tqdm(albedo_files, desc='Preparing scene by city...'):
             fileParts = albedo_path.split('/')
-            date, city = fileParts[-1], fileParts[-2], fileParts[-3], fileParts[-4], fileParts[-5]
+            date, city = fileParts[-2], fileParts[-3]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                            if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
     

@@ -1,0 +1,3 @@
+[files]
+include = *.py,*.ipynb
+exclude = .git/*,__pycache__/*,*.pyc
