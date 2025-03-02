@@ -74,7 +74,8 @@ class LandsatDataModule(pl.LightningDataModule):
             transform=None,
             byCity: bool = False,
             debug: bool = False,
-            nodata_fill_value: float = -9999.0
+            nodata_fill_value: float = -9999.0,
+            useHuggingface: bool = False
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -85,6 +86,7 @@ class LandsatDataModule(pl.LightningDataModule):
         self.nodata_fill_value = nodata_fill_value
         self.byCity = byCity
         self.debug = debug
+        self.useHuggingface = useHuggingface
         self.train_files = []
         self.val_files = []
         self.test_files = []
@@ -98,6 +100,9 @@ class LandsatDataModule(pl.LightningDataModule):
 
 
     def preprocessImages(self):
+        if self.useHuggingface:
+            print("Huggingface still needs to be implemented.")
+            return
         albedo_files = []
         x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
         
