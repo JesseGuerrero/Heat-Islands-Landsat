@@ -8,6 +8,8 @@ import rasterio
 import cv2
 import torch.nn as nn
 import os
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 class LandsatDataset(Dataset):
     def __init__(self, file_list, transform=None, nodata_fill_value=-9999.0):
@@ -68,6 +70,7 @@ class LandsatDataModule(pl.LightningDataModule):
     def __init__(
             self,
             data_dir: str,
+            monthsAhead: int = 0,
             batch_size: int = 1,
             num_workers: int = 2,
             train_ratio: float = 0.8,
@@ -75,10 +78,11 @@ class LandsatDataModule(pl.LightningDataModule):
             byCity: bool = False,
             debug: bool = False,
             nodata_fill_value: float = -9999.0,
-            useHuggingface: bool = False
+            normalize: bool = True,
     ):
         super().__init__()
         self.data_dir = data_dir
+        self.monthsAhead = monthsAhead
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.train_ratio = train_ratio
@@ -86,106 +90,18 @@ class LandsatDataModule(pl.LightningDataModule):
         self.nodata_fill_value = nodata_fill_value
         self.byCity = byCity
         self.debug = debug
-        self.useHuggingface = useHuggingface
+        self.normalize = normalize
         self.train_files = []
         self.val_files = []
         self.test_files = []
+        
 
-    def setup(self, stage=None):
-        self.preprocessImages()
+    def setup(self, stage=None):        
         if self.byCity:
             self.prepare_by_city()
         else:
             self.prepare_by_scene()
 
-
-    def preprocessImages(self):
-        if self.useHuggingface:
-            print("Huggingface still needs to be implemented.")
-            return
-        albedo_files = []
-        x_dir = os.path.join(self.data_dir, 'X', 'less5CloudCover')
-        
-        def get_common_size(raster_paths):
-            """Get the smallest height and width that all rasters share"""
-            min_height = float('inf')
-            min_width = float('inf')
-            
-            for path in raster_paths:
-                with rasterio.open(path) as src:
-                    height, width = src.shape
-                    min_height = min(min_height, height)
-                    min_width = min(min_width, width)
-                    
-            # Make dimensions divisible by 32
-            min_height = (min_height // 32) * 32
-            min_width = (min_width // 32) * 32
-            return min_height, min_width
-
-        def clip_and_save_raster(src_path, dst_path, target_height, target_width):
-            if os.path.exists(dst_path):
-                return
-                
-            with rasterio.open(src_path) as src:
-                data = src.read(1)
-                profile = src.profile.copy()
-                
-                height, width = data.shape
-                
-                # Center the clipping window
-                start_y = (height - target_height) // 2
-                start_x = (width - target_width) // 2
-                
-                clipped_data = data[start_y:start_y + target_height, 
-                                start_x:start_x + target_width]
-                
-                profile.update({
-                    'height': target_height,
-                    'width': target_width,
-                    'transform': rasterio.windows.transform(
-                        rasterio.windows.Window(start_x, start_y, target_width, target_height),
-                        src.transform
-                    )
-                })
-
-                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                
-                with rasterio.open(dst_path, 'w', **profile) as dst:
-                    dst.write(clipped_data, 1)
-
-        for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Preproccessing)...'):
-            date = file_path.split('/')[-2]
-            if self.debug and '2014' not in date: 
-                continue
-            if 'Albedo' in file_path:
-                albedo_files.append(file_path)
-        
-        for albedo_path in tqdm(albedo_files, desc='Preprocessing images...'):
-            scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
-                        if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
-            
-            # Get all raster paths for this scene
-            raster_paths = []
-            for raster_file in scene_files:
-                src_path = os.path.join(os.path.dirname(albedo_path), raster_file)
-                raster_paths.append(src_path)
-            
-            # Add LST path
-            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
-            raster_paths.append(lst_path)
-            
-            # Get common dimensions for all rasters in the scene
-            target_height, target_width = get_common_size(raster_paths)
-            
-            # Process X rasters
-            for raster_file in scene_files:
-                src_path = os.path.join(os.path.dirname(albedo_path), raster_file)
-                dst_path = src_path.replace('Data/', 'Data/preprocess/')
-                clip_and_save_raster(src_path, dst_path, target_height, target_width)
-            
-            # Process LST raster
-            dst_path = lst_path.replace('Data/', 'Data/preprocess/')
-            clip_and_save_raster(lst_path, dst_path, target_height, target_width)
 
     def prepare_by_city(self):
         def sortCitiesToFileList(cities_for_task, all_cities):
@@ -209,18 +125,23 @@ class LandsatDataModule(pl.LightningDataModule):
             date, city = fileParts[-2], fileParts[-3]
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
                            if os.path.isfile(os.path.join(os.path.dirname(albedo_path), f))]
-    
             raster_dict = {}
             for raster_file in scene_files:
                 raster_path = os.path.join(os.path.dirname(albedo_path), raster_file)
                 raster_dict[raster_file] = raster_path
             lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
+            date_object = datetime.strptime(date, "%Y-%m")
+            date_object = date_object + relativedelta(months=self.monthsAhead)
+            monthsAhead = date_object.strftime("%Y-%m")
+            lst_path = lst_path.replace(date, monthsAhead)
+            if not os.path.exists(lst_path):
+                continue
             raster_dict['LST.tif'] = lst_path 
+            raster_dict['HeatIndex.tif'] = lst_path.replace('LST.tif', 'HeatIndex.tif')
             if city not in cities:
                 cities[city] = {}
             cities[city][date] = raster_dict                    
     
-        # print(list(cities.keys()))
         train_size = int(len(list(cities.keys())) * self.train_ratio)
         val_size = int((len(list(cities.keys())) - train_size) / 2)        
     
@@ -255,9 +176,16 @@ class LandsatDataModule(pl.LightningDataModule):
                 raster_dict[raster_file] = raster_path
 
             lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
+            date = lst_path.split('/')[-2]
+            date_object = datetime.strptime(date, "%Y-%m")
+            date_object = date_object + relativedelta(months=self.monthsAhead)
+            monthsAhead = date_object.strftime("%Y-%m")       
+            lst_path = lst_path.replace(date, monthsAhead)
+            if not os.path.exists(lst_path):
+                continue
             raster_dict['LST.tif'] = lst_path
+            raster_dict['HeatIndex.tif'] = lst_path.replace('LST.tif', 'HeatIndex.tif')
             file_list.append(raster_dict)
-
         train_size = int(len(file_list) * self.train_ratio)
         val_size = int((len(file_list) - train_size) / 2)
 
