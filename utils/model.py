@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torch.nn as nn
 import os
+from utils.data.LandsatDataModule import LandsatDataset
 
 class LSTNowcaster(pl.LightningModule):
     def __init__(self, model="unet", backbone="resnet50", in_channels=5, learning_rate=1e-4, pretrained_weights=True):
@@ -40,9 +41,9 @@ class LSTNowcaster(pl.LightningModule):
 
         self.criterion = nn.MSELoss()
         self.learning_rate = learning_rate
-        self.train_rmse = []
-        self.test_rmse = []
-        self.validate_rmse = []
+        self.train_rmse_lst, self.train_rmse_heat_index = [], []
+        self.test_rmse_lst, self.test_rmse_heat_index = [], []
+        self.validate_rmse_lst, self.validate_rmse_heat_index = [], []
 
     def forward(self, x):
         return self.model(x)
@@ -58,31 +59,46 @@ class LSTNowcaster(pl.LightningModule):
         expanded_mask = mask.expand_as(targets)
         
         loss = self.criterion(outputs[expanded_mask], targets[expanded_mask])
-        self.save_rmse(batch, outputs, self.train_rmse)
+        self.save_rmse(batch, outputs, self.train_rmse_lst, self.train_rmse_heat_index)
         return {"loss": loss}
     
     def on_train_epoch_start(self):
-        self.train_rmse = []
+        self.train_rmse_lst, self.train_rmse_heat_index = [], []
 
     def on_train_epoch_end(self):
-        avg_rmse = torch.stack(self.train_rmse).mean()
+        avg_rmse = torch.stack(self.train_rmse_lst).mean()
         self.log("train_rmse_F", avg_rmse, 
              on_step=False,
              on_epoch=True,
              prog_bar=True,
              sync_dist=True)
+        avg_rmse = torch.stack(self.train_rmse_heat_index).mean()
+        self.log("train_rmse_P", avg_rmse, 
+             on_step=False,
+             on_epoch=True,
+             prog_bar=True,
+             sync_dist=True)
     
-    def save_rmse(self, batch, outputs, rmse_list):        
-        targets = batch['target']
+    def save_rmse(self, batch, outputs, rmse_list_lst, rmse_list_heatindex):  
+        # print('output', torch.mean(outputs[:, 0:1, :, :]))
+        # print('output', torch.mean(outputs[:, 1:2, :, :]))
+        # print('target', torch.mean(batch['target'][:, 0:1, :, :]))
+        # print('target', torch.mean(batch['target'][:, 1:2, :, :]))
+        outputs = LandsatDataset.denormalize(outputs)      
+        targets = LandsatDataset.denormalize(batch['target']) # Shape: Batch 2 512 512
         mask = batch['mask']
+        lst = targets[:, 0:1, :, :]        
+        heatIndex = targets[:, 1:2, :, :]
         
         # Expand mask to match output channels
-        expanded_mask = mask.expand_as(targets)
+        mask = mask.expand_as(lst)
         
-        mse_f = torch.mean((outputs[expanded_mask] - targets[expanded_mask])**2)
+        mse_f = torch.mean((outputs[:, 0:1, :, :][mask] - lst[mask])**2)
         rmse_f = torch.sqrt(mse_f)
-                
-        rmse_list.append(rmse_f)
+        rmse_list_lst.append(rmse_f)
+        mse_f = torch.mean((outputs[:, 1:2, :, :][mask] - heatIndex[mask])**2)
+        rmse_f = torch.sqrt(mse_f)
+        rmse_list_heatindex.append(rmse_f)
 
     def validation_step(self, batch):
         inputs = batch['input']
@@ -95,15 +111,17 @@ class LSTNowcaster(pl.LightningModule):
         expanded_mask = mask.expand_as(targets)
         
         mse_loss = self.criterion(outputs[expanded_mask], targets[expanded_mask])
-        self.save_rmse(batch, outputs, self.validate_rmse)
+        self.save_rmse(batch, outputs, self.validate_rmse_lst, self.validate_rmse_heat_index)
         return mse_loss
     
     def on_validation_epoch_start(self):
-        self.validate_rmse = []
+        self.validate_rmse_lst, self.validate_rmse_heat_index = [], []
 
     def on_validation_epoch_end(self):
-        avg_rmse = torch.stack(self.validate_rmse).mean()
+        avg_rmse = torch.stack(self.validate_rmse_lst).mean()
         self.log("val_rmse_F", avg_rmse, prog_bar=True)
+        avg_rmse = torch.stack(self.validate_rmse_heat_index).mean()
+        self.log("val_rmse_p", avg_rmse, prog_bar=True)
 
     def test_step(self, batch):
         inputs = batch['input']
@@ -116,15 +134,17 @@ class LSTNowcaster(pl.LightningModule):
         expanded_mask = mask.expand_as(targets)
         
         mse_loss = self.criterion(outputs[expanded_mask], targets[expanded_mask])
-        self.save_rmse(batch, outputs, self.test_rmse)
+        self.save_rmse(batch, outputs, self.test_rmse_lst, self.test_rmse_heat_index)
         return mse_loss
     
     def on_test_epoch_start(self):
-        self.test_rmse = []
+        self.test_rmse_lst, self.test_rmse_heat_index = [], []
 
     def on_test_epoch_end(self):
-        avg_rmse = torch.stack(self.test_rmse).mean()
+        avg_rmse = torch.stack(self.test_rmse_lst).mean()
         self.log("test_rmse_F", avg_rmse, prog_bar=True)
+        avg_rmse = torch.stack(self.test_rmse_heat_index).mean()
+        self.log("test_rmse_P", avg_rmse, prog_bar=True)
     
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)

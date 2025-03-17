@@ -16,6 +16,76 @@ class LandsatDataset(Dataset):
         self.file_list = file_list
         self.transform = transform
         self.nodata_fill_value = nodata_fill_value
+        self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
+        self.ranges = {
+            'Albedo.tif': (-0.018, 0.998),           # Typical albedo range
+            'DEM.tif': (-31.0, 2161.0),        # Approximate elevation range
+            'Land_Cover.tif': (11.0, 95.0),      # Assuming land cover classes
+            'NDVI.tif': (-1.0, 1.0),            # NDVI range
+            'NDWI.tif': (-1.0, 1.0),            # NDWI range
+            'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
+            'HeatIndex.tif': (1, 25)
+        }
+
+    def normalize(self, sample):
+        x = sample['input']  # batch 5 512 512
+        y = sample['target']  # batch 2 512 512
+        
+        # Normalize each input channel
+        for i, channel_name in enumerate(self.input_keys):
+            min_val, max_val = self.ranges[channel_name]           
+            # Only normalize values within the range
+            x[:, i:i+1, :, :][x!=-9999] = (x[:, i:i+1, :, :][x!=-9999] - min_val) / (max_val - min_val)
+        
+        # Normalize target LST
+        min_val, max_val = self.ranges['LST.tif']
+        y[:, 0:1, :, :][y!=-9999] = (y[:, 0:1, :, :][y!=-9999] - min_val) / (max_val - min_val)
+        
+        # Normalize target Heat Index
+        min_val, max_val = self.ranges['HeatIndex.tif']        
+        y[:, 1:2, :, :][y!=-9999] = (y[:, 1:2, :, :][y!=-9999] - min_val) / (max_val - min_val)
+        
+        return {'input': x, 'target': y, 'mask': sample['mask']}
+
+    @staticmethod
+    def denormalize(sample):
+        if isinstance(sample, dict):
+            x = sample['input'].clone()  # Clone to avoid modifying original
+            y = sample['target'].clone()  # Clone to avoid modifying original
+        else:
+            x = -1
+            y = sample.clone()
+        ranges = {
+            'Albedo.tif': (-0.018, 0.999),
+            'DEM.tif': (-31.0, 2161.0),
+            'Land_Cover.tif': (11.0, 95.0),
+            'NDVI.tif': (-1.0, 1.0),
+            'NDWI.tif': (-1.0, 1.0),
+            'LST.tif': (28.0, 175.0),
+            'HeatIndex.tif': (1, 25)
+        }
+        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
+        
+        if x != -1:
+            # Denormalize each input channel
+            for i, channel_name in enumerate(input_keys):
+                min_val, max_val = ranges[channel_name]
+                mask = x[:, i:i+1, :, :] != -9999
+                x[:, i:i+1, :, :][mask] = x[:, i:i+1, :, :][mask] * (max_val - min_val) + min_val
+                
+            # Denormalize target LST
+            min_val, max_val = ranges['LST.tif']
+            mask = y[:, 0:1, :, :] != -9999
+            y[:, 0:1, :, :][mask] = y[:, 0:1, :, :][mask] * (max_val - min_val) + min_val
+            
+            # Denormalize target Heat Index
+            min_val, max_val = ranges['HeatIndex.tif']
+            mask = y[:, 1:2, :, :] != -9999
+            y[:, 1:2, :, :][mask] = y[:, 1:2, :, :][mask] * (max_val - min_val) + min_val
+        
+        if x == -1:
+            return y
+        return {'input': x, 'target': y, 'mask': sample['mask']}
 
     def __len__(self):
         return len(self.file_list)
@@ -25,13 +95,11 @@ class LandsatDataset(Dataset):
 
         channels = []
         channel_masks = []
-        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
-        for key in input_keys:
+        for key in self.input_keys:
             with rasterio.open(sample_files[key]) as src:
-                channel = src.read(1).astype(np.float32)
-                valid_mask = ~np.isnan(channel)
-                valid_mask = valid_mask & (channel != self.nodata_fill_value)
-                channel = np.where(valid_mask, channel, 0.0)
+                channel = src.read(1).astype(np.float32) 
+                valid_mask = ~np.isnan(channel) & (channel != -9999)
+                channel = np.where(valid_mask, channel, -9999)
                 channels.append(channel)
                 channel_masks.append(valid_mask)
         # print(f"Sample scene: {sample_files}")
@@ -40,15 +108,14 @@ class LandsatDataset(Dataset):
 
         with rasterio.open(sample_files['LST.tif']) as src:
             y = src.read(1).astype(np.float32)
-            target_mask = ~np.isnan(y)
-            target_mask = target_mask & (y != self.nodata_fill_value)
-            y = np.where(target_mask, y, 0.0)
+            target_mask = ~np.isnan(y) & (y != -9999)
+            y = np.where(target_mask, y, -9999)
 
         combined_mask = np.all(input_mask, axis=0) & target_mask
         
         for i in range(x.shape[0]):
-            x[i] = np.where(combined_mask, x[i], 0.0)
-        y = np.where(combined_mask, y, 0.0)
+            x[i] = np.where(combined_mask, x[i], -9999)
+        y = np.where(combined_mask, y, -9999)
 
         y = np.expand_dims(y, axis=0)
         combined_mask = np.expand_dims(combined_mask, axis=0)
@@ -59,6 +126,7 @@ class LandsatDataset(Dataset):
             'mask': torch.from_numpy(combined_mask)
         }
 
+        sample = self.normalize(sample)
         if self.transform:
             sample = self.transform(sample)
 

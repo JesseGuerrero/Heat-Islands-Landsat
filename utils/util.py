@@ -9,13 +9,12 @@ import socket
 import rasterio
 import os
 import warnings
-import smtplib
+
 import tarfile
 import shutil
 import numpy as np
 from datetime import datetime
 from tqdm import tqdm
-from email.mime.text import MIMEText
 from pyproj import Transformer
 from shapely.geometry import Polygon
 from geopandas import GeoDataFrame
@@ -80,26 +79,6 @@ def checkPolygonInRasterCompletely(polygon: GeoDataFrame, ras: str):
             if pixel_value == nodata_value:
                 return False
     return True
-
-def notifySelf(body):
-    try:
-        if os.path.exists('./Logs/voice.txt'):
-            with open('./Logs/voice.txt', 'r') as file:
-                subject = file.readline().strip()
-                to_email = file.readline().strip()
-                from_email = file.readline().strip()
-                apiToken = file.readline().strip()
-                msg = MIMEText(f'{socket.gethostname()}: {body}')
-                msg["Subject"] = subject
-                msg["From"] = from_email
-                msg["To"] = to_email
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                    server.login(from_email, apiToken)
-                    server.sendmail(from_email, to_email, msg.as_string())
-        else:
-            print(body)
-    except Exception as e:
-        print("unable to send text...")
 
 def getMetaFromLandsatTIRs(fileName) -> tuple:
 	date = datetime.strptime(fileName.split('_')[3], "%Y%m%d").strftime("%Y-%m-%d")
