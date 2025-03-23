@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torch.nn as nn
 import os
-from utils.data.LandsatDataModule import LandsatDataset
+from utils.data.TiledLandsatDataModule import TiledGeotiffDataset
 
 class LSTNowcaster(pl.LightningModule):
     def __init__(self, model="unet", backbone="resnet50", in_channels=5, learning_rate=1e-4, pretrained_weights=True):
@@ -82,10 +82,17 @@ class LSTNowcaster(pl.LightningModule):
     def save_rmse(self, batch, outputs, rmse_list_lst, rmse_list_heatindex):  
         # print('output', torch.mean(outputs[:, 0:1, :, :]))
         # print('output', torch.mean(outputs[:, 1:2, :, :]))
-        # print('target', torch.mean(batch['target'][:, 0:1, :, :]))
-        # print('target', torch.mean(batch['target'][:, 1:2, :, :]))
-        outputs = LandsatDataset.denormalize(outputs)      
-        targets = LandsatDataset.denormalize(batch['target']) # Shape: Batch 2 512 512
+        # mask = batch['target'][:, 0:1, :, :] != -9999
+        # print('target', torch.mean(batch['target'][:, 0:1, :, :][mask]))
+        # print('target', torch.mean(batch['target'][:, 1:2, :, :][mask]))
+        # print("Output shape -> ", outputs.shape)
+        outputs = TiledGeotiffDataset.denormalize(outputs)      
+        targets = TiledGeotiffDataset.denormalize(batch['target'])
+        # print('output', torch.mean(outputs[:, 0:1, :, :]))
+        # print('output', torch.mean(outputs[:, 1:2, :, :]))
+        # mask = batch['target'][:, 0:1, :, :] != -9999
+        # print('target', torch.mean(targets[:, 0:1, :, :][mask]))
+        # print('target', torch.mean(targets[:, 1:2, :, :][mask]))
         mask = batch['mask']
         lst = targets[:, 0:1, :, :]        
         heatIndex = targets[:, 1:2, :, :]
