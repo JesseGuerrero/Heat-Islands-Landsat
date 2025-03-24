@@ -3050,3 +3050,5 @@ wandb/wandb/run-20250321_142310-i03f95rj/files/wandb-summary.json
 wandb/wandb/run-20250321_142310-i03f95rj/logs/debug-core.log
 wandb/wandb/run-20250321_142310-i03f95rj/logs/debug-internal.log
 wandb/wandb/run-20250321_142310-i03f95rj/logs/debug.log
+wandb/.cache/wandb/wandb/logs/core-debug-20250324_142600.log
+wandb/.cache/wandb/wandb/logs/core-debug-20250324_142703.log

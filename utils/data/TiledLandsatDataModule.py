@@ -271,7 +271,9 @@ class TiledLandsatDataModule(pl.LightningDataModule):
             normalize: bool = True,
             tile_size: int = 128,
             tile_overlap: float = 0.0,
-            seedForScene: int = 1
+            seedForScene: int = 1,
+            onlyTrain: bool = False,
+            skipYears: list = []
     ):
         super().__init__()
         self.tile_size = tile_size
@@ -288,6 +290,10 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         self.debug = debug
         self.normalize = normalize
         self.seedForScene = seedForScene
+        self.onlyTrain = onlyTrain
+        if self.debug:
+            skipYears.append("2010", "2011", "2012", "2013", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025")
+        self.skipYears = skipYears
         self.train_files = []
         self.val_files = []
         self.test_files = []
@@ -311,8 +317,9 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes(Sort by City)...'):
             date = file_path.split('/')[-2]
-            if self.debug and '2014' not in date: 
-                continue
+            for year in self.skipYears:
+                if year in date:
+                    continue
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
         
@@ -338,6 +345,13 @@ class TiledLandsatDataModule(pl.LightningDataModule):
                 cities[city] = {}
             cities[city][date] = raster_dict                    
     
+        if self.onlyTrain:
+            self.train_cities = sortCitiesToFileList(list(cities.keys())[:len(list(cities.keys()))-2])
+            self.val_cities = [sortCitiesToFileList(list(cities.keys())[-1])]
+            self.test_cities = [sortCitiesToFileList(list(cities.keys())[-2])]
+            print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
+            return
+            
         train_size = int(len(list(cities.keys())) * self.train_ratio)
         val_size = int((len(list(cities.keys())) - train_size) / 2)        
     
@@ -357,8 +371,9 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Sort by Random Scene)...'):
             date = file_path.split('/')[-2]
-            if self.debug and '2014' not in date: 
-                continue
+            for year in self.skipYears:
+                if year in date:
+                    continue
             if 'Albedo' in file_path:
                 albedo_files.append(file_path)
 
@@ -384,13 +399,20 @@ class TiledLandsatDataModule(pl.LightningDataModule):
             file_list.append(raster_dict)
         random.seed(self.seedForScene)    
         random.shuffle(file_list)
+        if self.onlyTrain:
+            self.train_files = file_list[:len(file_list)-2]
+            self.val_files = [file_list[-1]]
+            self.test_files = [file_list[-2]]
+            print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
+            return
+
         train_size = int(len(file_list) * self.train_ratio)
         val_size = int((len(file_list) - train_size) / 2)
 
         self.train_files = file_list[:train_size]
         self.val_files = file_list[train_size:train_size + val_size]
         self.test_files = file_list[train_size + val_size:]
-        # print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
+        print(f"Dataset splits - Train: {len(self.train_files)}, Val: {len(self.val_files)}, Test: {len(self.test_files)}")
 
     def get_file_paths(self, folder_path: str) -> list[str]:
         file_paths = []
