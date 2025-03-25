@@ -3095,3 +3095,16 @@ wandb/wandb/run-20250324_144850-i5waxy9v/files/wandb-metadata.json
 wandb/wandb/run-20250324_144850-i5waxy9v/logs/debug-core.log
 wandb/wandb/run-20250324_144850-i5waxy9v/logs/debug-internal.log
 wandb/wandb/run-20250324_144850-i5waxy9v/logs/debug.log
+wandb/.cache/wandb/artifacts/obj/md5/a9/ea565bce882c2056de56eb9a5a953b
+wandb/.cache/wandb/wandb/logs/core-debug-20250325_054638.log
+wandb/heat-island/checkpoints/3yu9ys5h_March25/3yu9ys5h_March25_epoch=000_val_rmse_F=nan.ckpt
+wandb/wandb/latest-run.414920
+wandb/wandb/run-20250325_054638-3yu9ys5h/run-3yu9ys5h.wandb
+wandb/wandb/run-20250325_054638-3yu9ys5h/files/config.yaml
+wandb/wandb/run-20250325_054638-3yu9ys5h/files/output.log
+wandb/wandb/run-20250325_054638-3yu9ys5h/files/requirements.txt
+wandb/wandb/run-20250325_054638-3yu9ys5h/files/wandb-metadata.json
+wandb/wandb/run-20250325_054638-3yu9ys5h/files/wandb-summary.json
+wandb/wandb/run-20250325_054638-3yu9ys5h/logs/debug-core.log
+wandb/wandb/run-20250325_054638-3yu9ys5h/logs/debug-internal.log
+wandb/wandb/run-20250325_054638-3yu9ys5h/logs/debug.log
