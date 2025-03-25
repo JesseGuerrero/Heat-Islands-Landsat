@@ -38,7 +38,7 @@ class RandomRotation:
         return sample
 
 class TiledGeotiffDataset(Dataset):
-    def __init__(self, file_dict: Dict[str, str], tile_size: int = 128, 
+    def __init__(self, file_list: List[Dict[str, str]], tile_size: int = 128, 
                  tile_overlap: float = 0.0, augment: bool = False, nodata_fill_value=-9999.0):
         """
         Dataset for tiled processing of geotiffs.
@@ -50,7 +50,7 @@ class TiledGeotiffDataset(Dataset):
             transform: Transforms to apply
             nodata_fill_value: Value to use for no data
         """
-        self.file_dict = file_dict
+        self.file_list = file_list # List[Dict()]
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
         self.augment = augment
@@ -64,28 +64,38 @@ class TiledGeotiffDataset(Dataset):
             'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
             'HeatIndex.tif': (1, 25)
         }
-        
-        # Get image dimensions and cell size from first band
-        with rasterio.open(list(file_dict.values())[0]) as src:
-            self.width, self.height = src.width, src.height
-            self.src_transform = src.transform
-            self.crs = src.crs
-            
-            # Get the cell sizes in x and y directions
-            # Affine transform matrix elements: [a, b, c, d, e, f]
-            # a: width of a pixel
-            # e: height of a pixel (negative)
-            self.cell_width = abs(self.src_transform.a)
-            self.cell_height = abs(self.src_transform.e)
-        
-        # Generate tile coordinates using original cell sizes
-        self.tiles = self._get_tiles(img_size=(self.width, self.height), 
-                                    tile_size=tile_size, 
-                                    tile_overlap=tile_overlap)
-        
-        # Input keys for consistent ordering
         self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
-    
+        self.output_keys = ['LST.tif', 'HeatIndex.tif']
+
+
+        tile_coordinates_list = [] # List[List[Tuple[int, int, int, int]]]
+        src_transforms = [] # List[transforms]
+        for scene in self.file_list:                       
+            with rasterio.open(list(scene.values())[0]) as src:
+                self.width, self.height = src.width, src.height
+                src_transforms.append(src.transform)
+                self.crs = src.crs
+                
+                # Get the cell sizes in x and y directions
+                # Affine transform matrix elements: [a, b, c, d, e, f]
+                # a: width of a pixel
+                # e: height of a pixel (negative)
+                self.cell_width = abs(src.transform.a)
+                self.cell_height = abs(src.transform.e)
+            
+                # Generate tile coordinates using original cell sizes
+                tile_coordinates_list.append(self._get_tiles(img_size=(self.width, self.height), 
+                                                tile_size=tile_size, 
+                                                tile_overlap=tile_overlap))
+        self.all_tiles = []
+        self.all_files = []
+        self.all_transforms = []
+        for sceneI, sceneTiles in enumerate(tile_coordinates_list):
+            for tileBox in sceneTiles:
+                self.all_tiles.append(tileBox)
+                self.all_files.append(self.file_list[sceneI])
+                self.all_transforms.append(src_transforms[sceneI])
+        
     def normalize(self, sample):
         x = sample['input']  #5 512 512
         y = sample['target']  #2 512 512
@@ -171,47 +181,43 @@ class TiledGeotiffDataset(Dataset):
         return tiles
     
     def __len__(self):
-        return len(self.tiles)
+        return len(self.all_tiles)
     
     def __getitem__(self, idx):
-        box = self.tiles[idx]
-        # print(box)
-        xmin, ymin, xmax, ymax = box
-        window = Window(col_off=xmin, row_off=ymin, width=xmax-xmin, height=ymax-ymin)
-        
-        # Get the actual geographic coordinates for this tile
-        # This preserves the actual cell size information
-        tile_transform = rasterio.windows.transform(window, self.src_transform)
-        
+        box = self.all_tiles[idx]
+        scene = self.all_files[idx]
+        transform = self.all_transforms[idx]
+                
         # Read input bands
         channels = []
         channel_masks = []
-        
         for key in self.input_keys:
-            with rasterio.open(self.file_dict[key]) as src:
+            xmin, ymin, xmax, ymax = box
+            window = Window(col_off=xmin, row_off=ymin, width=xmax-xmin, height=ymax-ymin)
+            tile_transform = rasterio.windows.transform(window, transform)
+            with rasterio.open(scene[key]) as src:
                 channel = src.read(1, window=window).astype(np.float32)
                 valid_mask = ~np.isnan(channel)
                 valid_mask = valid_mask & (channel != self.nodata_fill_value)
-                channel = np.where(valid_mask, channel, -9999)
+                channel = np.where(valid_mask, channel, self.nodata_fill_value)
                 channels.append(channel)
                 channel_masks.append(valid_mask)
-                
         x = np.stack(channels, axis=0)
         input_mask = np.stack(channel_masks, axis=0)
         
         # Read target LST
-        with rasterio.open(self.file_dict['LST.tif']) as src:
+        with rasterio.open(scene['LST.tif']) as src:
             lst = src.read(1, window=window).astype(np.float32)
             lst_mask = ~np.isnan(lst)
             lst_mask = lst_mask & (lst != self.nodata_fill_value)
-            lst = np.where(lst_mask, lst, -9999)
+            lst = np.where(lst_mask, lst, self.nodata_fill_value)
         
         # Read target Heat Index and add as a second channel
-        with rasterio.open(self.file_dict['HeatIndex.tif']) as src:
+        with rasterio.open(scene['HeatIndex.tif']) as src:
             heat_index = src.read(1, window=window).astype(np.float32)
             heat_index_mask = ~np.isnan(heat_index)
             heat_index_mask = heat_index_mask & (heat_index != self.nodata_fill_value)
-            heat_index = np.where(heat_index_mask, heat_index, -9999)
+            heat_index = np.where(heat_index_mask, heat_index, self.nodata_fill_value)
         
         # Combine all masks
         target_mask = lst_mask & heat_index_mask
@@ -219,10 +225,10 @@ class TiledGeotiffDataset(Dataset):
         
         # Apply combined mask to input and target data
         for i in range(x.shape[0]):
-            x[i] = np.where(combined_mask, x[i], -9999)
+            x[i] = np.where(combined_mask, x[i], self.nodata_fill_value)
         
-        lst = np.where(combined_mask, lst, -9999)
-        heat_index = np.where(combined_mask, heat_index, -9999)
+        lst = np.where(combined_mask, lst, self.nodata_fill_value)
+        heat_index = np.where(combined_mask, heat_index, self.nodata_fill_value)
         
         # Stack LST and Heat Index into a 2-channel target tensor
         y = np.stack([lst, heat_index], axis=0)
@@ -250,9 +256,8 @@ class TiledGeotiffDataset(Dataset):
             'mask': sample['mask'],
             'box': [xmin, ymin, xmax, ymax],  # Include tile coordinates for reference
             'transform': tile_transform,  # Include the geographic transform
-            'file_dict': self.file_dict
+            'file_dict': scene
         }
-        
         return sample
 
 class TiledLandsatDataModule(pl.LightningDataModule):
@@ -273,7 +278,7 @@ class TiledLandsatDataModule(pl.LightningDataModule):
             tile_overlap: float = 0.0,
             seedForScene: int = 1,
             onlyTrain: bool = False,
-            skipYears: list = []
+            includeYears: list = []
     ):
         super().__init__()
         self.tile_size = tile_size
@@ -292,8 +297,8 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         self.seedForScene = seedForScene
         self.onlyTrain = onlyTrain
         if self.debug:
-            skipYears.append("2010", "2011", "2012", "2013", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025")
-        self.skipYears = skipYears
+            includeYears = ["2014"]
+        self.includeYears = includeYears
         self.train_files = []
         self.val_files = []
         self.test_files = []
@@ -317,11 +322,10 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes(Sort by City)...'):
             date = file_path.split('/')[-2]
-            for year in self.skipYears:
+            for year in self.includeYears:
                 if year in date:
-                    continue
-            if 'Albedo' in file_path:
-                albedo_files.append(file_path)
+                    if 'Albedo' in file_path:
+                        albedo_files.append(file_path)
         
         for albedo_path in tqdm(albedo_files, desc='Preparing scene by city...'):
             fileParts = albedo_path.split('/')
@@ -371,11 +375,10 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Sort by Random Scene)...'):
             date = file_path.split('/')[-2]
-            for year in self.skipYears:
+            for year in self.includeYears:
                 if year in date:
-                    continue
-            if 'Albedo' in file_path:
-                albedo_files.append(file_path)
+                    if 'Albedo' in file_path:
+                        albedo_files.append(file_path)
 
         for albedo_path in tqdm(albedo_files, desc='Preparing scene by scene...'):
             scene_files = [f for f in os.listdir(os.path.dirname(albedo_path))
@@ -423,19 +426,13 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         return file_paths   
     
     def train_dataloader(self):
-        train_datasets = [
-            TiledGeotiffDataset(
-                file_dict, 
+        train_dataset = TiledGeotiffDataset(
+                self.train_files, 
                 tile_size=self.tile_size, 
                 tile_overlap=self.tile_overlap,
                 augment=self.augment, 
                 nodata_fill_value=self.nodata_fill_value
             ) 
-            for file_dict in self.train_files
-        ]
-        
-        train_dataset = ConcatDataset(train_datasets)
-        
         return DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -444,18 +441,12 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         )
     
     def val_dataloader(self):
-        val_datasets = [
-            TiledGeotiffDataset(
-                file_dict, 
+        val_dataset = TiledGeotiffDataset(
+                self.val_files, 
                 tile_size=self.tile_size, 
                 tile_overlap=self.tile_overlap,
                 nodata_fill_value=self.nodata_fill_value
             )
-            for file_dict in self.val_files
-        ]
-        
-        val_dataset = ConcatDataset(val_datasets)
-        
         return DataLoader(
             val_dataset,
             batch_size=self.batch_size,
@@ -464,18 +455,12 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         )
     
     def test_dataloader(self):
-        test_datasets = [
-            TiledGeotiffDataset(
-                file_dict, 
+        test_dataset = TiledGeotiffDataset(
+                self.test_files, 
                 tile_size=self.tile_size, 
                 tile_overlap=self.tile_overlap,
                 nodata_fill_value=self.nodata_fill_value
             )
-            for file_dict in self.test_files
-        ]
-        
-        test_dataset = ConcatDataset(test_datasets)
-        
         return DataLoader(
             test_dataset,
             batch_size=self.batch_size,

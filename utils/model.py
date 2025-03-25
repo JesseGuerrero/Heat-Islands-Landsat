@@ -126,9 +126,9 @@ class LSTNowcaster(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         avg_rmse = torch.stack(self.validate_rmse_lst).mean()
-        self.log("val_rmse_F", avg_rmse, prog_bar=True)
+        self.log("val_rmse_F", avg_rmse, prog_bar=True, sync_dist=True)
         avg_rmse = torch.stack(self.validate_rmse_heat_index).mean()
-        self.log("val_rmse_p", avg_rmse, prog_bar=True)
+        self.log("val_rmse_p", avg_rmse, prog_bar=True, sync_dist=True)
 
     def test_step(self, batch):
         inputs = batch['input']
@@ -149,9 +149,9 @@ class LSTNowcaster(pl.LightningModule):
 
     def on_test_epoch_end(self):
         avg_rmse = torch.stack(self.test_rmse_lst).mean()
-        self.log("test_rmse_F", avg_rmse, prog_bar=True)
+        self.log("test_rmse_F", avg_rmse, prog_bar=True, sync_dist=True)
         avg_rmse = torch.stack(self.test_rmse_heat_index).mean()
-        self.log("test_rmse_P", avg_rmse, prog_bar=True)
+        self.log("test_rmse_P", avg_rmse, prog_bar=True, sync_dist=True)
     
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
