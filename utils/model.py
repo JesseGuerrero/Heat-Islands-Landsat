@@ -54,7 +54,7 @@ class LSTNowcaster(pl.LightningModule):
         mask = batch['mask']
 
         print(f'Input {inputs.shape}')
-        print('input', torch.mean(input))
+        print('input', torch.mean(inputs))
         
         outputs = self(inputs) # Outputs is NaN, check inputs
         
