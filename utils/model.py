@@ -79,12 +79,12 @@ class LSTNowcaster(pl.LightningModule):
              sync_dist=True)
     
     def save_rmse(self, batch, outputs, rmse_list_lst, rmse_list_heatindex):  
-        print('output', torch.mean(outputs[:, 0:1, :, :]))
-        print('output', torch.mean(outputs[:, 1:2, :, :]))
-        mask = batch['target'][:, 0:1, :, :] != -9999
-        print('target', torch.mean(batch['target'][:, 0:1, :, :][mask]))
-        print('target', torch.mean(batch['target'][:, 1:2, :, :][mask]))
-        print("Output shape -> ", outputs.shape)
+        # print('output', torch.mean(outputs[:, 0:1, :, :]))
+        # print('output', torch.mean(outputs[:, 1:2, :, :]))
+        # mask = batch['target'][:, 0:1, :, :] != -9999
+        # print('target', torch.mean(batch['target'][:, 0:1, :, :][mask]))
+        # print('target', torch.mean(batch['target'][:, 1:2, :, :][mask]))
+        # print("Output shape -> ", outputs.shape)
         outputs = TiledGeotiffDataset.denormalize(outputs)      
         targets = TiledGeotiffDataset.denormalize(batch['target'])
         print('output', torch.mean(outputs[:, 0:1, :, :]))
