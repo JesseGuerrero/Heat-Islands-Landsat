@@ -52,13 +52,7 @@ class LSTNowcaster(pl.LightningModule):
         inputs = batch['input']
         targets = batch['target']
         mask = batch['mask']
-
-        print(f'Input {inputs.shape}')
-        mask = inputs != -9999
-        print('input', torch.mean(inputs[mask]))
         outputs = self(inputs) # Outputs is NaN, check inputs
-        print(f'output1 {outputs.shape}')
-        print('output1', torch.mean(outputs))
         
         # Expand mask to match output channels
         expanded_mask = mask.expand_as(targets)
