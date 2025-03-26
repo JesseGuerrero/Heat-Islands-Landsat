@@ -15,7 +15,7 @@ import os
 from utils.data.TiledLandsatDataModule import TiledGeotiffDataset
 
 class LSTNowcaster(pl.LightningModule):
-    def __init__(self, model="unet", backbone="resnet50", in_channels=5, learning_rate=1e-4, pretrained_weights=True):
+    def __init__(self, model="unet", backbone="resnet50", in_channels=5, learning_rate=2e-3, pretrained_weights=True):
         super().__init__()
         self.save_hyperparameters()
         self.model = PixelwiseRegressionTask(
@@ -61,6 +61,16 @@ class LSTNowcaster(pl.LightningModule):
         self.save_rmse(batch, outputs, self.train_rmse_lst, self.train_rmse_heat_index)
         return {"loss": loss}
     
+    def on_train_start(self):
+        # Update total_steps in the scheduler
+        if hasattr(self.trainer, "estimated_stepping_batches"):
+            self.lr_schedulers()[0]["scheduler"].total_steps = self.trainer.estimated_stepping_batches
+        else:
+            # Fallback calculation
+            steps_per_epoch = len(self.trainer.train_dataloader)
+            max_epochs = self.trainer.max_epochs
+            self.lr_schedulers()[0]["scheduler"].total_steps = steps_per_epoch * max_epochs
+
     def on_train_epoch_start(self):
         self.train_rmse_lst, self.train_rmse_heat_index = [], []
 
@@ -153,4 +163,22 @@ class LSTNowcaster(pl.LightningModule):
         self.log("test_rmse_P", avg_rmse, prog_bar=True, sync_dist=True)
     
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        
+        # Set a dummy value for total_steps - will be updated in on_train_start
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=self.learning_rate,
+            total_steps=1000,  # Placeholder value
+            pct_start=0.3,
+            div_factor=25.0,
+            final_div_factor=1000.0
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step"
+            }
+        }
