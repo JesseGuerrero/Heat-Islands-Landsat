@@ -64,7 +64,7 @@ class LSTNowcaster(pl.LightningModule):
     def on_train_start(self):
         # Update total_steps in the scheduler
         if hasattr(self.trainer, "estimated_stepping_batches"):
-            self.lr_schedulers()[0]["scheduler"].total_steps = self.trainer.estimated_stepping_batches
+            self.lr_schedulers().total_steps = self.trainer.estimated_stepping_batches
         else:
             # Fallback calculation
             steps_per_epoch = len(self.trainer.train_dataloader)
