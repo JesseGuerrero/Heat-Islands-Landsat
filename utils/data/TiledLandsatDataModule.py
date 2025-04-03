@@ -57,7 +57,7 @@ class TiledGeotiffDataset(Dataset):
         self.nodata_fill_value = nodata_fill_value
         self.ranges = {
             'Albedo.tif': (-0.018, 0.998),           # Typical albedo range
-            'DEM.tif': (-31.0, 2161.0),        # Approximate elevation range
+            'DEM.tif': (-93.0, 3061.0),        # Approximate elevation range
             'Land_Cover.tif': (11.0, 95.0),      # Assuming land cover classes
             'NDVI.tif': (-1.0, 1.0),            # NDVI range
             'NDWI.tif': (-1.0, 1.0),            # NDWI range
