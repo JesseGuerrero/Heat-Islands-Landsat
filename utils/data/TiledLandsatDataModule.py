@@ -61,10 +61,11 @@ class TiledGeotiffDataset(Dataset):
             'Land_Cover.tif': (11.0, 95.0),      # Assuming land cover classes
             'NDVI.tif': (-1.0, 1.0),            # NDVI range
             'NDWI.tif': (-1.0, 1.0),            # NDWI range
+            'NDBI.tif': (-1.0, 1.0),    
             'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
             'HeatIndex.tif': (1, 25)
         }
-        self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
+        self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif']
         self.output_keys = ['LST.tif', 'HeatIndex.tif']
 
 
@@ -97,7 +98,7 @@ class TiledGeotiffDataset(Dataset):
                 self.all_transforms.append(src_transforms[sceneI])
         
     def normalize(self, sample):
-        x = sample['input']  #5 512 512
+        x = sample['input']  #6 512 512
         y = sample['target']  #2 512 512
         
         # Normalize each input channel
@@ -128,14 +129,15 @@ class TiledGeotiffDataset(Dataset):
             y = sample.clone()
         ranges = {
             'Albedo.tif': (-0.018, 0.998),           # Typical albedo range
-            'DEM.tif': (-31.0, 2161.0),        # Approximate elevation range
+            'DEM.tif': (-93.0, 3061.0),        # Approximate elevation range
             'Land_Cover.tif': (11.0, 95.0),      # Assuming land cover classes
             'NDVI.tif': (-1.0, 1.0),            # NDVI range
             'NDWI.tif': (-1.0, 1.0),            # NDWI range
+            'NDBI.tif': (-1.0, 1.0),   
             'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
             'HeatIndex.tif': (1, 25)
         }
-        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif']
+        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif']
         
         if isinstance(sample, dict):
             # Denormalize each input channel

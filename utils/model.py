@@ -13,32 +13,86 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import torch.nn as nn
 import os
 from utils.data.TiledLandsatDataModule import TiledGeotiffDataset
+from transformers import SegformerForSemanticSegmentation
 
 class LSTNowcaster(pl.LightningModule):
-    def __init__(self, model="unet", backbone="resnet50", in_channels=5, learning_rate=1e-4, pretrained_weights=True):
+    def __init__(self, model="unet", backbone="resnet50", in_channels=6, learning_rate=1e-4, pretrained_weights=True):
         super().__init__()
         self.save_hyperparameters()
-        self.model = PixelwiseRegressionTask(
-            model=model,
-            backbone=backbone,
-            weights=pretrained_weights,
-            in_channels=in_channels,
-            num_outputs=1,
-            loss="mse",
-            lr=learning_rate
-        )
 
-        #Replace for two channels:
-        old_head = self.model.model.segmentation_head[0]
-        new_head = nn.Conv2d(
-            old_head.in_channels,
-            2,  # Set to 2 output channels
-            kernel_size=old_head.kernel_size,
-            stride=old_head.stride,
-            padding=old_head.padding
-        )                
-        self.model.model.segmentation_head[0] = new_head
+        # Load the pre-trained segformer model
+        if model == "segformer":
+            if backbone == "b5":
+                self.model = SegformerForSemanticSegmentation.from_pretrained(f"nvidia/segformer-b5-finetuned-ade-640-640")
+            else:
+                self.model = SegformerForSemanticSegmentation.from_pretrained(f"nvidia/segformer-{backbone}-finetuned-ade-512-512")
 
+            # Modify input projection to match your input channels
+            orig_proj = self.model.segformer.encoder.patch_embeddings[0].proj
+            new_proj = nn.Conv2d(
+                in_channels, 
+                orig_proj.out_channels,
+                kernel_size=orig_proj.kernel_size,
+                stride=orig_proj.stride,
+                padding=orig_proj.padding
+            )
+            self.model.segformer.encoder.patch_embeddings[0].proj = new_proj
+
+            # Modify the final classifier to output 2 channels instead of semantic classes
+            old_classifier = self.model.decode_head.classifier
+            self.model.decode_head.classifier = nn.Conv2d(
+                old_classifier.in_channels,
+                2,  # 2 output channels for LST and Heat Index
+                kernel_size=old_classifier.kernel_size,
+                stride=old_classifier.stride,
+                padding=old_classifier.padding
+            )
+            
+            # Create a wrapper that ensures output is at the original input resolution
+            class SegformerWrapper(nn.Module):
+                def __init__(self, model):
+                    super().__init__()
+                    self.model = model
+                    
+                def forward(self, x):
+                    # Get the output from the model
+                    output = self.model(x).logits
+                    
+                    # Check if the spatial dimensions match the input
+                    if output.shape[2:] != x.shape[2:]:
+                        # Resize to match the input resolution
+                        output = nn.functional.interpolate(
+                            output, 
+                            size=x.shape[2:],  # Match input spatial dimensions
+                            mode='bilinear', 
+                            align_corners=False
+                        )
+                    
+                    return output
+            
+            # Wrap the model
+            self.model = SegformerWrapper(self.model)
+        if model == "unet":
+            self.model = PixelwiseRegressionTask(
+                model=model,
+                backbone=backbone,
+                weights=pretrained_weights,
+                in_channels=in_channels,
+                num_outputs=1,
+                loss="mse",
+                lr=learning_rate
+            )
+
+            # Replace for two channels:
+            old_head = self.model.model.segmentation_head[0]
+            new_head = nn.Conv2d(
+                old_head.in_channels,
+                2,  # Set to 2 output channels
+                kernel_size=old_head.kernel_size,
+                stride=old_head.stride,
+                padding=old_head.padding
+            )                
+            self.model.model.segmentation_head[0] = new_head
         self.criterion = nn.MSELoss()
         self.learning_rate = learning_rate
         self.train_rmse_lst, self.train_rmse_heat_index = [], []
@@ -46,7 +100,8 @@ class LSTNowcaster(pl.LightningModule):
         self.validate_rmse_lst, self.validate_rmse_heat_index = [], []
 
     def forward(self, x):
-        return self.model(x)
+        with torch.cuda.amp.autocast(enabled=False):
+            return self.model(x.float())
 
     def training_step(self, batch):
         inputs = batch['input']

@@ -18,6 +18,7 @@ from tqdm import tqdm
 from pyproj import Transformer
 from shapely.geometry import Polygon
 from geopandas import GeoDataFrame
+from utils.voice import notifySelf
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="xarray")
 
 maxthreads = 5 # Threads count for downloads
