@@ -164,7 +164,7 @@ elif i <= 24:
 if i <= -1:
     pass
 else:
-    config["experiment_name"] = f"Experiment #{i}: {config["backbone"]}"
+    config["experiment_name"] = f'Experiment #{i}: {config["backbone"]}'
 
 wandb_logger = WandbLogger(
     project="heat-island",
