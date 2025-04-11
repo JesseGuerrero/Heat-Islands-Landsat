@@ -1,8 +1,4 @@
 # %%
-# TODO: Find a good way to do all data
-# TODO: Fix metrics
-# TODO: Test 3 epoch
-# TODO: Train
 from torchgeo.trainers import PixelwiseRegressionTask
 import torch
 import pytorch_lightning as pl
@@ -33,19 +29,19 @@ os.environ["WANDB_DATA_DIR"] = "./wandb/.cache/wandb-data"
 os.environ["WANDB_ARTIFACT_DIR"] = "./wandb/artifacts"
 
 config = {
-    "experiment_name": "Testing SegFormer",
-    "debug": True,
+    "experiment_name": "Full Experiment",
+    "debug": False,
     "by_city": False,
     "months_ahead": 0,
     "tile_size": 128,
     "tile_overlap": 0.0,
     "learning_rate": 1e-4,
     "model": "segformer",
-    "backbone": "b0",
+    "backbone": "b5",
     "dataset": "pure_landsat",
     "augment": True,
-    "epochs": 100,
-    "batch_size": 128,
+    "epochs": 250,
+    "batch_size": 4,
     "pretrained_weights": True,
     "deterministic": True,
     "random_seed_by_scene": 1,
@@ -61,88 +57,115 @@ i = -1
 if len(sys.argv) > 1:
     i = int(sys.argv[1])  # Convert string to integer
 
-if i == 14:
-    config["experiment_name"] = "segformer b5"
-    config["model"] = "segformer"
-    config["backbone"] = "b5"
-if i == 15:
-    config["experiment_name"] = "segformer b0"
-    config["model"] = "segformer"
-    config["backbone"] = "b0"
-if i == 16:
-    config["experiment_name"] = "unet resnet152"
-    config["model"] = "unet"
-    config["backbone"] = "resnet152"
-
-if i == 0:
-    config["experiment_name"] = "Cannibalize 0month"
-    config["only_train"] = True
-    config["by_city"] = False
-    config["months_ahead"] = 0
-    config["skip_years"] = ["2023"]
 if i == 1:
-    config["experiment_name"] = "Cannibalize 3month"
     config["only_train"] = True
     config["by_city"] = False
     config["months_ahead"] = 3
-    config["skip_years"] = ["2023"]
-if i == 2:
-    config["experiment_name"] = "Cannibalize 6month"
+if i == 2:    
     config["only_train"] = True
     config["by_city"] = False
     config["months_ahead"] = 6
-    config["skip_years"] = ["2023"]
-if i == 3:
-    config["experiment_name"] = "ZeroGeography 0month"
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 0
-if i == 4:
-    config["experiment_name"] = "ZeroGeography 3month"
+if i == 3:    
     config["only_train"] = False
     config["by_city"] = True
     config["months_ahead"] = 3
-if i == 5:
-    config["experiment_name"] = "ZeroGeography 6month"
+if i == 4:    
     config["only_train"] = False
     config["by_city"] = True
     config["months_ahead"] = 6
-if i == 6:
-    config["experiment_name"] = "ZeroTemporal 0month"
-    config["only_train"] = False
-    config["by_city"] = False
-    config["months_ahead"] = 0
-    config["skip_years"] = ["2023"]
-if i == 7:
-    config["experiment_name"] = "ZeroTemporal 3month"
+if i == 5:    
     config["only_train"] = False
     config["by_city"] = False
     config["months_ahead"] = 3
-    config["skip_years"] = ["2023"]
-if i == 8:
-    config["experiment_name"] = "ZeroTemporal 6month"
+if i == 6:    
     config["only_train"] = False
     config["by_city"] = False
     config["months_ahead"] = 6
-    config["skip_years"] = ["2023"]
-if i == 9:
-    config["experiment_name"] = "ZeroTemporal ZeroGeography 0month"
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 0
-    config["skip_years"] = ["2023"]
-if i == 10:
-    config["experiment_name"] = "ZeroTemporal ZeroGeography 3month"
+if i == 7:    
     config["only_train"] = False
     config["by_city"] = True
     config["months_ahead"] = 3
-    config["skip_years"] = ["2023"]
-if i == 11:
-    config["experiment_name"] = "ZeroTemporal ZeroGeography 6month"
+if i == 8:    
     config["only_train"] = False
     config["by_city"] = True
     config["months_ahead"] = 6
-    config["skip_years"] = ["2023"]
+if i == 9:    
+    config["only_train"] = True
+    config["by_city"] = False
+    config["months_ahead"] = 3
+if i == 10:    
+    config["only_train"] = True
+    config["by_city"] = False
+    config["months_ahead"] = 6
+if i == 11:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 3
+if i == 12:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 6
+if i == 13:    
+    config["only_train"] = False
+    config["by_city"] = False
+    config["months_ahead"] = 3
+if i == 14:    
+    config["only_train"] = False
+    config["by_city"] = False
+    config["months_ahead"] = 6
+if i == 15:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 3
+if i == 16:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 6
+if i == 17:    
+    config["only_train"] = True
+    config["by_city"] = False
+    config["months_ahead"] = 3
+if i == 18:    
+    config["only_train"] = True
+    config["by_city"] = False
+    config["months_ahead"] = 6
+if i == 19:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 3
+if i == 20:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 6
+if i == 21:    
+    config["only_train"] = False
+    config["by_city"] = False
+    config["months_ahead"] = 3
+if i == 22:    
+    config["only_train"] = False
+    config["by_city"] = False
+    config["months_ahead"] = 6
+if i == 23:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 3
+if i == 24:    
+    config["only_train"] = False
+    config["by_city"] = True
+    config["months_ahead"] = 6
+if i <= -1:
+    pass
+elif i <= 8:
+    config["backbone"] = "b5"
+elif i <= 16:
+    config["backbone"] = "b3"
+elif i <= 24:
+    config["backbone"] = "b1"
+if i <= -1:
+    pass
+else:
+    config["experiment_name"] = f"Experiment #{i}: {config["backbone"]}"
+
 wandb_logger = WandbLogger(
     project="heat-island",
     name=config['experiment_name'],
