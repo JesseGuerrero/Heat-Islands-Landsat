@@ -16,8 +16,6 @@ from datetime import datetime
 from utils.model import LSTNowcaster
 from utils.data.TiledLandsatDataModule import TiledLandsatDataModule
 from utils.voice import notifySelf
-# from pytorch_lightning.loggers import TensorBoardLogger
-# from pytorch_lightning.profilers import PyTorchProfiler
 torch.cuda.empty_cache()
 torch.set_float32_matmul_precision('high')
 
@@ -27,7 +25,14 @@ os.environ["WANDB_CACHE_DIR"] = "./wandb/.cache/wandb"
 os.environ["WANDB_CONFIG_DIR"] = "./wandb/.config/wandb"
 os.environ["WANDB_DATA_DIR"] = "./wandb/.cache/wandb-data"
 os.environ["WANDB_ARTIFACT_DIR"] = "./wandb/artifacts"
+import sys
 
+i = -1
+# Get the first argument passed after the script name
+if len(sys.argv) > 1:
+    i = int(sys.argv[1])  # Convert string to integer
+    batchSize = int(sys.argv[2])
+    deviceCount = int(sys.argv[3])
 config = {
     "experiment_name": "Full Experiment",
     "debug": False,
@@ -41,7 +46,8 @@ config = {
     "dataset": "pure_landsat",
     "augment": True,
     "epochs": 128,
-    "batch_size": 64,
+    "batch_size": batchSize,
+    "numDevices": deviceCount,
     "pretrained_weights": True,
     "deterministic": True,
     "random_seed_by_scene": 1,
@@ -50,12 +56,7 @@ config = {
     "skip_years": []
 }
 
-import sys
 
-i = -1
-# Get the first argument passed after the script name
-if len(sys.argv) > 1:
-    i = int(sys.argv[1])  # Convert string to integer
 
 if i == 1:
     config["only_train"] = True
@@ -217,21 +218,34 @@ allYears = ["2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "202
 for year in config["skip_years"]:
     allYears.remove(year)
 # for subYears in [allYears[:5], allYears[5:]]:
-trainer = pl.Trainer(
-    max_epochs=config['epochs'],
-    gradient_clip_val=0.5,
-    log_every_n_steps=10,
-    enable_progress_bar=True,
-    enable_model_summary=False,
-    # deterministic=config["deterministic"],
-    num_sanity_val_steps=2,
-    logger=wandb_logger,
-    callbacks=[checkpoint_callback, percentage_callback],
-    # devices=4,                         # Use all 4 GPUs
-    accelerator="gpu",                 # Use GPU acceleration
-    # strategy="ddp",                    # Use DistributedDataParallel
-    precision="16-mixed"               # Add mixed precision for memory efficiency
-)                             
+if config["numDevices"] == 1:
+    trainer = pl.Trainer(
+        max_epochs=config['epochs'],
+        gradient_clip_val=0.5,
+        log_every_n_steps=10,
+        enable_progress_bar=True,
+        enable_model_summary=False,
+        num_sanity_val_steps=2,
+        logger=wandb_logger,
+        callbacks=[checkpoint_callback, percentage_callback],        
+        accelerator="gpu",                 # Use GPU acceleration        
+        precision="16-mixed"               # Add mixed precision for memory efficiency
+    )               
+else:
+    trainer = pl.Trainer(
+        max_epochs=config['epochs'],
+        gradient_clip_val=0.5,
+        log_every_n_steps=10,
+        enable_progress_bar=True,
+        enable_model_summary=False,
+        num_sanity_val_steps=2,
+        logger=wandb_logger,
+        callbacks=[checkpoint_callback, percentage_callback],
+        devices=config["numDevices"],                # Use all 4 GPUs
+        accelerator="gpu",                 # Use GPU acceleration
+        strategy="ddp",                    # Use DistributedDataParallel
+        precision="16-mixed"               # Add mixed precision for memory efficiency
+    )               
 
 data_module = TiledLandsatDataModule(
     data_dir="./Data",
