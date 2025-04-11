@@ -40,7 +40,7 @@ config = {
     "backbone": "b5",
     "dataset": "pure_landsat",
     "augment": True,
-    "epochs": 150,
+    "epochs": 128,
     "batch_size": 64,
     "pretrained_weights": True,
     "deterministic": True,
