@@ -14,6 +14,7 @@ import torch.nn as nn
 import os
 from utils.data.TiledLandsatDataModule import TiledGeotiffDataset
 from transformers import SegformerForSemanticSegmentation
+from transformers import OneFormerProcessor, OneFormerForUniversalSegmentation, OneFormerModel
 
 class LSTNowcaster(pl.LightningModule):
     def __init__(self, model="unet", backbone="resnet50", in_channels=6, learning_rate=1e-4, pretrained_weights=True):
