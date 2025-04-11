@@ -57,110 +57,52 @@ config = {
 }
 
 
-
-if i == 1:
-    config["only_train"] = True
+#b5
+if i == 1:        
     config["by_city"] = False
     config["months_ahead"] = 3
-if i == 2:    
-    config["only_train"] = True
+if i == 2:        
     config["by_city"] = False
     config["months_ahead"] = 6
-if i == 3:    
-    config["only_train"] = False
+if i == 3:        
     config["by_city"] = True
     config["months_ahead"] = 3
-if i == 4:    
-    config["only_train"] = False
+if i == 4:        
     config["by_city"] = True
     config["months_ahead"] = 6
-if i == 5:    
-    config["only_train"] = False
+#b3
+if i == 5:        
     config["by_city"] = False
     config["months_ahead"] = 3
-if i == 6:    
-    config["only_train"] = False
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 7:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 8:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 6
-if i == 9:    
-    config["only_train"] = True
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 10:    
-    config["only_train"] = True
+if i == 6:        
     config["by_city"] = False
     config["months_ahead"] = 6
-if i == 11:    
-    config["only_train"] = False
+if i == 7:        
     config["by_city"] = True
     config["months_ahead"] = 3
-if i == 12:    
-    config["only_train"] = False
+if i == 8:        
     config["by_city"] = True
     config["months_ahead"] = 6
-if i == 13:    
-    config["only_train"] = False
+#b1
+if i == 9:        
     config["by_city"] = False
     config["months_ahead"] = 3
-if i == 14:    
-    config["only_train"] = False
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 15:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 16:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 6
-if i == 17:    
-    config["only_train"] = True
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 18:    
-    config["only_train"] = True
+if i == 10:        
     config["by_city"] = False
     config["months_ahead"] = 6
-if i == 19:    
-    config["only_train"] = False
+if i == 11:        
     config["by_city"] = True
     config["months_ahead"] = 3
-if i == 20:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 6
-if i == 21:    
-    config["only_train"] = False
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 22:    
-    config["only_train"] = False
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 23:    
-    config["only_train"] = False
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 24:    
-    config["only_train"] = False
+if i == 12:        
     config["by_city"] = True
     config["months_ahead"] = 6
 if i <= -1:
     pass
-elif i <= 8:
+elif i <= 4:
     config["backbone"] = "b5"
-elif i <= 16:
+elif i <= 8:
     config["backbone"] = "b3"
-elif i <= 24:
+elif i <= 12:
     config["backbone"] = "b1"
 if i <= -1:
     pass
