@@ -73,7 +73,7 @@ class LSTNowcaster(pl.LightningModule):
             
             # Wrap the model
             self.model = SegformerWrapper(self.model)
-        if model == "unet":
+        if model == "unet" or model == "deeplabv3+":
             self.model = PixelwiseRegressionTask(
                 model=model,
                 backbone=backbone,

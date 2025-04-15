@@ -71,7 +71,7 @@ class TiledGeotiffDataset(Dataset):
 
         tile_coordinates_list = [] # List[List[Tuple[int, int, int, int]]]
         src_transforms = [] # List[transforms]
-        for scene in self.file_list:                       
+        for scene in self.file_list:                        
             with rasterio.open(list(scene.values())[0]) as src:
                 self.width, self.height = src.width, src.height
                 src_transforms.append(src.transform)
@@ -220,7 +220,7 @@ class TiledGeotiffDataset(Dataset):
             heat_index_mask = ~np.isnan(heat_index)
             heat_index_mask = heat_index_mask & (heat_index != self.nodata_fill_value)
             heat_index = np.where(heat_index_mask, heat_index, self.nodata_fill_value)
-        
+
         # Combine all masks
         target_mask = lst_mask & heat_index_mask
         combined_mask = np.all(input_mask, axis=0) & target_mask
@@ -321,7 +321,7 @@ class TiledLandsatDataModule(pl.LightningDataModule):
             return file_list
         cities = {}
         albedo_files = []
-        x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
+        x_dir = os.path.join(self.data_dir, f'preprocess_{self.monthsAhead}monthsahead', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes(Sort by City)...'):
             date = file_path.split('/')[-2]
             for year in self.includeYears:
@@ -338,11 +338,11 @@ class TiledLandsatDataModule(pl.LightningDataModule):
             for raster_file in scene_files:
                 raster_path = os.path.join(os.path.dirname(albedo_path), raster_file)
                 raster_dict[raster_file] = raster_path
-            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
+            date = albedo_path.split('/')[-2]
             date_object = datetime.strptime(date, "%Y-%m")
             date_object = date_object + relativedelta(months=self.monthsAhead)
-            monthsAhead = date_object.strftime("%Y-%m")
-            lst_path = lst_path.replace(date, monthsAhead)
+            dateAhead = date_object.strftime("%Y-%m")
+            lst_path = albedo_path.replace('/X/', '/y/').replace(date, dateAhead).replace('Albedo.tif', 'LST.tif')
             if not os.path.exists(lst_path):
                 continue
             raster_dict['LST.tif'] = lst_path 
@@ -374,7 +374,7 @@ class TiledLandsatDataModule(pl.LightningDataModule):
         file_list = []
         albedo_files = []
 
-        x_dir = os.path.join(self.data_dir, 'preprocess', 'X', 'less5CloudCover')
+        x_dir = os.path.join(self.data_dir, f'preprocess_{self.monthsAhead}monthsahead', 'X', 'less5CloudCover')
         for file_path in tqdm(self.get_file_paths(x_dir), desc='Gathering scenes (Sort by Random Scene)...'):
             date = file_path.split('/')[-2]
             for year in self.includeYears:
@@ -391,19 +391,16 @@ class TiledLandsatDataModule(pl.LightningDataModule):
                 raster_path = os.path.join(os.path.dirname(albedo_path), raster_file)
                 raster_dict[raster_file] = raster_path
 
-            lst_path = albedo_path.replace('/X/', '/y/').replace('Albedo.tif', 'LST.tif')
-            date = lst_path.split('/')[-2]
+            date = albedo_path.split('/')[-2]
             date_object = datetime.strptime(date, "%Y-%m")
             date_object = date_object + relativedelta(months=self.monthsAhead)
-            monthsAhead = date_object.strftime("%Y-%m")       
-            lst_path = lst_path.replace(date, monthsAhead)
+            dateAhead = date_object.strftime("%Y-%m")
+            lst_path = albedo_path.replace('/X/', '/y/').replace(date, dateAhead).replace('Albedo.tif', 'LST.tif')
             if not os.path.exists(lst_path):
                 continue
             raster_dict['LST.tif'] = lst_path
             raster_dict['HeatIndex.tif'] = lst_path.replace('LST.tif', 'HeatIndex.tif')
             file_list.append(raster_dict)
-        random.seed(self.seedForScene)    
-        random.shuffle(file_list)
         if self.onlyTrain:
             self.train_files = file_list[:len(file_list)-2]
             self.val_files = [file_list[-1]]

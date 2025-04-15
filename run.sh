@@ -1,4 +1,8 @@
 #!/bin/bash
+# Change to the directory of the script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
 
 # Check if all parameters are provided
 if [ $# -ne 4 ]; then
