@@ -62,10 +62,11 @@ class TiledGeotiffDataset(Dataset):
             'NDVI.tif': (-1.0, 1.0),            # NDVI range
             'NDWI.tif': (-1.0, 1.0),            # NDWI range
             'NDBI.tif': (-1.0, 1.0),    
+            'LSTInput.tif': (-80.9723, 211.73), 
             'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
             'HeatIndex.tif': (1, 25)
         }
-        self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif']
+        self.input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif', 'LSTInput.tif']
         self.output_keys = ['LST.tif', 'HeatIndex.tif']
 
 
@@ -134,10 +135,11 @@ class TiledGeotiffDataset(Dataset):
             'NDVI.tif': (-1.0, 1.0),            # NDVI range
             'NDWI.tif': (-1.0, 1.0),            # NDWI range
             'NDBI.tif': (-1.0, 1.0),   
+            'LSTInput.tif': (-80.9723, 211.73), 
             'LST.tif': (-80.9723, 211.73),             # Typical LST range in Fahrenheit
             'HeatIndex.tif': (1, 25)
         }
-        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif']
+        input_keys = ['Albedo.tif', 'DEM.tif', 'Land_Cover.tif', 'NDVI.tif', 'NDWI.tif', 'NDBI.tif', 'LSTInput.tif']
         
         if isinstance(sample, dict):
             # Denormalize each input channel
@@ -155,6 +157,11 @@ class TiledGeotiffDataset(Dataset):
         min_val, max_val = ranges['HeatIndex.tif']
         mask = y[:, 0:1, :, :] != -9999
         y[:, 1:2, :, :][mask] = y[:, 1:2, :, :][mask] * (max_val - min_val) + min_val
+
+        # Apply integer conversion and limits to Heat Index
+        y[:, 1:2, :, :][mask] = torch.round(y[:, 1:2, :, :][mask])  # Convert to integers
+        y[:, 1:2, :, :][mask] = torch.clamp(y[:, 1:2, :, :][mask], min=1, max=25)  # Apply limits
+    
         if isinstance(sample, dict):
             return {'input': x, 'target': y, 'mask': sample['mask'], 'box': sample['box'], 'transform': sample['transform'], 'file_dict': sample['file_dict']}
         return y

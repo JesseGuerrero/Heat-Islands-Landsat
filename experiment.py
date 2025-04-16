@@ -34,10 +34,10 @@ if len(sys.argv) > 1:
     batchSize = int(sys.argv[2])
     deviceCount = int(sys.argv[3])
 config = {
-    "experiment_name": "Full Experiment",
+    "experiment_name": "7 channels 3 months debug segformer",
     "debug": False,
     "by_city": False,
-    "months_ahead": 0,
+    "months_ahead": 1,
     "tile_size": 128,
     "tile_overlap": 0.0,
     "learning_rate": 1e-4,
@@ -45,69 +45,69 @@ config = {
     "backbone": "b5",
     "dataset": "pure_landsat",
     "augment": True,
-    "epochs": 128,
-    "batch_size": batchSize,
-    "numDevices": deviceCount,
+    "epochs": 200,
+    "batch_size": 128,
     "pretrained_weights": True,
     "deterministic": True,
     "random_seed_by_scene": 1,
-    "in_channels": 6,
+    "in_channels": 7,
     "only_train": False,
     "skip_years": []
 }
 
-
-#b5
 if i == 1:        
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 2:        
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 3:        
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 4:        
-    config["by_city"] = True
-    config["months_ahead"] = 6
-#b3
-if i == 5:        
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 6:        
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 7:        
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 8:        
-    config["by_city"] = True
-    config["months_ahead"] = 6
-#b1
-if i == 9:        
-    config["by_city"] = False
-    config["months_ahead"] = 3
-if i == 10:        
-    config["by_city"] = False
-    config["months_ahead"] = 6
-if i == 11:        
-    config["by_city"] = True
-    config["months_ahead"] = 3
-if i == 12:        
-    config["by_city"] = True
-    config["months_ahead"] = 6
-if i <= -1:
-    pass
-elif i <= 4:
+    config["model"] = "segformer"
     config["backbone"] = "b5"
-elif i <= 8:
+    config["months_ahead"] = 1
+if i == 2:        
+    config["model"] = "segformer"
+    config["backbone"] = "b5"
+    config["months_ahead"] = 3
+if i == 3:        
+    config["model"] = "segformer"
     config["backbone"] = "b3"
-elif i <= 12:
-    config["backbone"] = "b1"
+    config["months_ahead"] = 1
+if i == 4:        
+    config["model"] = "segformer"
+    config["backbone"] = "b3"
+    config["months_ahead"] = 3
+if i == 5:        
+    config["model"] = "deeplabv3+"
+    config["backbone"] = "resnet50"
+    config["months_ahead"] = 1
+if i == 6:        
+    config["model"] = "deeplabv3+"
+    config["backbone"] = "resnet50"
+    config["months_ahead"] = 3
+#b3
+if i == 7:        
+    config["model"] = "deeplabv3+"
+    config["backbone"] = "resnet18"
+    config["months_ahead"] = 1
+if i == 8:        
+    config["model"] = "deeplabv3+"
+    config["backbone"] = "resnet18"
+    config["months_ahead"] = 3
+if i == 9:        
+    config["model"] = "unet"
+    config["backbone"] = "resnet50"
+    config["months_ahead"] = 1
+if i == 10:        
+    config["model"] = "unet"
+    config["backbone"] = "resnet50"
+    config["months_ahead"] = 3
+if i == 11:        
+    config["model"] = "unet"
+    config["backbone"] = "resnet18"
+    config["months_ahead"] = 1
+if i == 12:        
+    config["model"] = "unet"
+    config["backbone"] = "resnet18"
+    config["months_ahead"] = 3
 if i <= -1:
     pass
 else:
-    config["experiment_name"] = f'Experiment #{i}: {config["backbone"]}'
+    config["experiment_name"] = f'Exp. #{i}: {config["model"]},Month {config["months_ahead"]}, {config["backbone"]}'
 
 wandb_logger = WandbLogger(
     project="heat-island",
@@ -150,7 +150,7 @@ date_string = current_date.strftime("%B%d")
 checkpoint_callback = ModelCheckpoint(
     dirpath=f"./wandb/heat-island/checkpoints/{wandb_run_id}_{date_string}",
     filename= f"{wandb_run_id}_{date_string}_" + "{epoch:03d}_{val_rmse_F:.4f}",
-    monitor="val_rmse_F",
+    monitor="val_rmse_p",
     mode="min",
     save_top_k=1,
     every_n_epochs=1,
@@ -160,40 +160,27 @@ allYears = ["2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "202
 for year in config["skip_years"]:
     allYears.remove(year)
 # for subYears in [allYears[:5], allYears[5:]]:
-if config["numDevices"] == 1:
-    trainer = pl.Trainer(
-        max_epochs=config['epochs'],
-        gradient_clip_val=0.5,
-        log_every_n_steps=10,
-        enable_progress_bar=True,
-        enable_model_summary=False,
-        num_sanity_val_steps=2,
-        logger=wandb_logger,
-        callbacks=[checkpoint_callback, percentage_callback],        
-        accelerator="gpu",                 # Use GPU acceleration        
-        precision="16-mixed"               # Add mixed precision for memory efficiency
-    )               
-else:
-    trainer = pl.Trainer(
-        max_epochs=config['epochs'],
-        gradient_clip_val=0.5,
-        log_every_n_steps=10,
-        enable_progress_bar=True,
-        enable_model_summary=False,
-        num_sanity_val_steps=2,
-        logger=wandb_logger,
-        callbacks=[checkpoint_callback, percentage_callback],
-        devices=config["numDevices"],                # Use all 4 GPUs
-        accelerator="gpu",                 # Use GPU acceleration
-        strategy="ddp",                    # Use DistributedDataParallel
-        precision="16-mixed"               # Add mixed precision for memory efficiency
-    )               
+trainer = pl.Trainer(
+    max_epochs=config['epochs'],
+    gradient_clip_val=0.5,
+    log_every_n_steps=10,
+    enable_progress_bar=True,
+    enable_model_summary=False,
+    # deterministic=config["deterministic"],
+    num_sanity_val_steps=2,
+    logger=wandb_logger,
+    callbacks=[checkpoint_callback, percentage_callback],
+    # devices=4,                         # Use all 4 GPUs
+    accelerator="gpu",                 # Use GPU acceleration
+    # strategy="ddp",                    # Use DistributedDataParallel
+    precision="16-mixed"               # Add mixed precision for memory efficiency
+)                             
 
 data_module = TiledLandsatDataModule(
     data_dir="./Data",
     monthsAhead=config["months_ahead"],
     batch_size=config["batch_size"],
-    num_workers=4,
+    num_workers=8,
     byCity=config["by_city"],
     debug=config["debug"],
     tile_size=config["tile_size"],

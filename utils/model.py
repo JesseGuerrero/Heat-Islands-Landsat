@@ -17,7 +17,7 @@ from transformers import SegformerForSemanticSegmentation
 from transformers import OneFormerProcessor, OneFormerForUniversalSegmentation, OneFormerModel
 
 class LSTNowcaster(pl.LightningModule):
-    def __init__(self, model="unet", backbone="resnet50", in_channels=6, learning_rate=1e-4, pretrained_weights=True):
+    def __init__(self, model="unet", backbone="resnet50", in_channels=7, learning_rate=1e-4, pretrained_weights=True):
         super().__init__()
         self.save_hyperparameters()
 
@@ -209,4 +209,23 @@ class LSTNowcaster(pl.LightningModule):
         self.log("test_rmse_P", avg_rmse, prog_bar=True, sync_dist=True)
     
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        
+        # Add cosine annealing scheduler
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.trainer.max_epochs,  # Total number of epochs
+            eta_min=1e-6  # Minimum learning rate
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",  # Update scheduler after each epoch
+                "frequency": 1,
+                "monitor": "val_rmse_p",  # Optional: monitor validation metric
+                "strict": True,
+                "name": "cosine_lr"
+            }
+        }
