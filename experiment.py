@@ -45,8 +45,8 @@ config = {
     "backbone": "b5",
     "dataset": "pure_landsat",
     "augment": True,
-    "epochs": 200,
-    "batch_size": 128,
+    "epochs": 160,
+    "batch_size": batchSize,
     "pretrained_weights": True,
     "deterministic": True,
     "random_seed_by_scene": 1,
@@ -109,6 +109,7 @@ if i <= -1:
 else:
     config["experiment_name"] = f'Exp. #{i}: {config["model"]},Month {config["months_ahead"]}, {config["backbone"]}'
 
+notifySelf(f'Starting {config["experiment_name"]}!')
 wandb_logger = WandbLogger(
     project="heat-island",
     name=config['experiment_name'],
@@ -170,7 +171,7 @@ trainer = pl.Trainer(
     num_sanity_val_steps=2,
     logger=wandb_logger,
     callbacks=[checkpoint_callback, percentage_callback],
-    # devices=4,                         # Use all 4 GPUs
+    # devices=deviceCount,                         # Use all 4 GPUs
     accelerator="gpu",                 # Use GPU acceleration
     # strategy="ddp",                    # Use DistributedDataParallel
     precision="16-mixed"               # Add mixed precision for memory efficiency
